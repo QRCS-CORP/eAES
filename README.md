@@ -32,9 +32,10 @@ GCM will soon be added to this implementations modes.
 This implementation has both a C reference, and an implementation that uses the AES-NI instructions that are used in the AES and RHX cipher variants. 
 The AES-NI implementation can be enabled by adding the RHX_AESNI_ENABLED constant to your preprocessor definitions. 
 The AES128 and AES256 implementations along with the CBC, CTR, and CBC modes are tested using vectors from NIST SP800-38a. 
-SP800-38a: <a href="http://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38a.pdf">Block Cipher Modes of Operations</a>
 See the documentation and the rhx_kat.h tests for usage examples.
-Towards post-quantum symmetric cryptography
-<a href="https://eprint.iacr.org/2019/553</a>
-Towards Post-Quantum Secure Symmetric Cryptography: A Mathematical Perspective
-<a href="https://eprint.iacr.org/2019/1208</a>
+
+SP800-38a: <a href="http://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38a.pdf">Block Cipher Modes of Operations</a>
+
+Towards post-quantum symmetric cryptography: <a href="https://eprint.iacr.org/2019/553>eAES</a>
+
+Towards Post-Quantum Secure Symmetric Cryptography: <a href="https://eprint.iacr.org/2019/1208>A Mathematical Perspective</a>
