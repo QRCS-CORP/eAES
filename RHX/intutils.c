@@ -1,18 +1,17 @@
 #include "intutils.h"
 
-int32_t are_equal8(const uint8_t* a, const uint8_t* b, size_t length)
+bool are_equal8(const uint8_t* a, const uint8_t* b, size_t length)
 {
+	bool status;
 	size_t i;
-	int32_t status;
 
-	status = QCX_STATUS_SUCCESS;
+	status = true;
 
 	for (i = 0; i < length; ++i)
 	{
 		if (a[i] != b[i])
 		{
-			//printf("failed at: %d\n", i);
-			status = QCX_STATUS_FAILURE;
+			status = false;
 			break;
 		}
 	}
@@ -191,7 +190,7 @@ int32_t verify(const uint8_t* a, const uint8_t* b, size_t length)
 
 	d = 0;
 
-	for (i = 0; i < length; i++)
+	for (i = 0; i < length; ++i)
 	{
 		d |= a[i] ^ b[i];
 	}

@@ -157,19 +157,24 @@
     <ClCompile Include="rhx_kat.c" />
     <ClCompile Include="rhx_test.c" />
     <ClCompile Include="sha2.c" />
+    <ClCompile Include="sha2_kat.c" />
     <ClCompile Include="sha3.c" />
     <ClCompile Include="sha3_kat.c" />
     <ClCompile Include="sysrand.c" />
+    <ClCompile Include="testutils.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="common.h" />
+    <ClInclude Include="intrinsics.h" />
     <ClInclude Include="intutils.h" />
     <ClInclude Include="rhx.h" />
     <ClInclude Include="rhx_kat.h" />
     <ClInclude Include="sha2.h" />
+    <ClInclude Include="sha2_kat.h" />
     <ClInclude Include="sha3.h" />
     <ClInclude Include="sha3_kat.h" />
     <ClInclude Include="sysrand.h" />
+    <ClInclude Include="testutils.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

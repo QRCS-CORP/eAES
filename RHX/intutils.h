@@ -5,20 +5,20 @@
 * August 7, 2019
 */
 
-#ifndef QCX_INTUTILS_H
-#define QCX_INTUTILS_H
+#ifndef QSC_INTUTILS_H
+#define QSC_INTUTILS_H
 
 #include "common.h"
 
 /**
-* \brief Compare two byte 8=bit integer for equality
+* \brief Compare two byte 8-bit integer for equality
 *
 * \param a: the first array to compare
 * \param b: the second array to compare
 * \param length: the number of bytes to compare
-* \return Returns zero (QCX_STATUS_SUCCESS) for equal values
+* \return Returns zero (QSC_STATUS_SUCCESS) for equal values
 */
-int32_t are_equal8(const uint8_t* a, const uint8_t* b, size_t length);
+bool are_equal8(const uint8_t* a, const uint8_t* b, size_t length);
 
 /**
 * \brief Convert an 8-bit integer array to a 32-bit big-endian integer
@@ -84,6 +84,12 @@ void clear32(uint32_t* a, size_t count);
 */
 void clear64(uint64_t* a, size_t count);
 
+/**
+* \brief Convert an 8-bit integer array to a 16-bit little-endian integer
+*
+* \param input: the source integer 8-bit array
+* \return the 16-bit little endian integer
+*/
 uint16_t le8to16(const uint8_t* input);
 
 /**
@@ -102,6 +108,12 @@ uint32_t le8to32(const uint8_t* input);
 */
 uint64_t le8to64(const uint8_t* input);
 
+/**
+* \brief Convert a 16-bit integer to a little-endian 8-bit integer array
+*
+* \param output: the 8-bit integer array
+* \param value: the 16-bit integer
+*/
 void le16to8(uint8_t* output, uint16_t value);
 
 /**

@@ -1,5 +1,6 @@
 #include "sha2.h"
 #include "intutils.h"
+#include "intrinsics.h"
 
 /* SHA2-256 */
 
@@ -31,7 +32,7 @@ void sha256_blockupdate(sha256_state* state, const uint8_t* message, size_t nblo
 	}
 }
 
-void sha256_compute(uint8_t* output, const uint8_t* message, size_t msglen)
+void sha2_compute256(uint8_t* output, const uint8_t* message, size_t msglen)
 {
 	sha256_state state;
 	size_t blocks;
@@ -71,7 +72,7 @@ void sha256_finalize(sha256_state* state, uint8_t* output, const uint8_t* messag
 	pad[msglen] = 128;
 	++msglen;
 
-	// padding
+	/* padding */
 	if (msglen < SHA2_256_RATE)
 	{
 		clear8(pad + msglen, SHA2_256_RATE - msglen);
@@ -83,12 +84,12 @@ void sha256_finalize(sha256_state* state, uint8_t* output, const uint8_t* messag
 		clear8(pad, SHA2_256_RATE);
 	}
 
-	// finalize state with counter and last compression
+	/* finalize state with counter and last compression */
 	be32to8(pad + 56, (uint32_t)(bitLen >> 32));
 	be32to8(pad + 60, (uint32_t)bitLen);
 	sha256_permute(state->state, pad);
 
-	for (i = 0; i < SHA2_256_SIZE; i += 4)
+	for (i = 0; i < SHA2_256_HASH; i += 4)
 	{
 		be32to8(output + i, state->state[i / 4]);
 	}
@@ -98,7 +99,7 @@ void sha256_initialize(sha256_state* state)
 {
 	size_t i;
 
-	for (i = 0; i < SHA2_STATESIZE; ++i)
+	for (i = 0; i < SHA2_STATE_SIZE; ++i)
 	{
 		state->state[i] = sha256_iv[i];
 	}
@@ -106,6 +107,182 @@ void sha256_initialize(sha256_state* state)
 	state->t = 0;
 }
 
+#ifdef SHA2_SHANI_ENABLED
+void sha256_permute(uint32_t* output, const uint8_t* message)
+{
+	__m128i s0;
+	__m128i s1;
+	__m128i t0;
+	__m128i t1;
+	__m128i pmsg;
+	__m128i m0;
+	__m128i m1;
+	__m128i m2;
+	__m128i m3;
+	__m128i mask;
+	__m128i ptmp;
+
+	/* load initial values */
+	ptmp = _mm_loadu_si128((__m128i*)output);
+	s1 = _mm_loadu_si128((__m128i*)output + (4 * sizeof(uint32_t)));
+	mask = _mm_set_epi64x(0x0C0D0E0F08090A0BULL, 0x0405060700010203ULL);
+	ptmp = _mm_shuffle_epi32(ptmp, 0xB1); 
+	s1 = _mm_shuffle_epi32(s1, 0x1B);
+	s0 = _mm_alignr_epi8(ptmp, s1, 8);
+	s1 = _mm_blend_epi16(s1, ptmp, 0xF0);
+	t0 = s0;
+	t1 = s1;
+
+	/* rounds 0-3 */
+	pmsg = _mm_loadu_si128((const __m128i*)message);
+	m0 = _mm_shuffle_epi8(pmsg, mask);
+	pmsg = _mm_add_epi32(m0, _mm_set_epi64x(0xE9B5DBA5B5C0FBCFULL, 0x71374491428A2F98ULL));
+	s1 = _mm_sha256rnds2_epu32(s1, s0, pmsg);
+	pmsg = _mm_shuffle_epi32(pmsg, 0x0E);
+	s0 = _mm_sha256rnds2_epu32(s0, s1, pmsg);
+	/* rounds 4-7 */
+	m1 = _mm_loadu_si128((const __m128i*)message + 16);
+	m1 = _mm_shuffle_epi8(m1, mask);
+	pmsg = _mm_add_epi32(m1, _mm_set_epi64x(0xAB1C5ED5923F82A4ULL, 0x59F111F13956C25BULL));
+	s1 = _mm_sha256rnds2_epu32(s1, s0, pmsg);
+	pmsg = _mm_shuffle_epi32(pmsg, 0x0E);
+	s0 = _mm_sha256rnds2_epu32(s0, s1, pmsg);
+	m0 = _mm_sha256msg1_epu32(m0, m1);
+	/* rounds 8-11 */
+	m2 = _mm_loadu_si128((const __m128i*)message + 32);
+	m2 = _mm_shuffle_epi8(m2, mask);
+	pmsg = _mm_add_epi32(m2, _mm_set_epi64x(0x550C7DC3243185BEULL, 0x12835B01D807AA98ULL));
+	s1 = _mm_sha256rnds2_epu32(s1, s0, pmsg);
+	pmsg = _mm_shuffle_epi32(pmsg, 0x0E);
+	s0 = _mm_sha256rnds2_epu32(s0, s1, pmsg);
+	m1 = _mm_sha256msg1_epu32(m1, m2);
+	/* rounds 12-15 */
+	m3 = _mm_loadu_si128((const __m128i*)message + 48);
+	m3 = _mm_shuffle_epi8(m3, mask);
+	pmsg = _mm_add_epi32(m3, _mm_set_epi64x(0xC19BF1749BDC06A7ULL, 0x80DEB1FE72BE5D74ULL));
+	s1 = _mm_sha256rnds2_epu32(s1, s0, pmsg);
+	ptmp = _mm_alignr_epi8(m3, m2, 4);
+	m0 = _mm_add_epi32(m0, ptmp);
+	m0 = _mm_sha256msg2_epu32(m0, m3);
+	pmsg = _mm_shuffle_epi32(pmsg, 0x0E);
+	s0 = _mm_sha256rnds2_epu32(s0, s1, pmsg);
+	m2 = _mm_sha256msg1_epu32(m2, m3);
+	/* rounds 16-19 */
+	pmsg = _mm_add_epi32(m0, _mm_set_epi64x(0x240CA1CC0FC19DC6ULL, 0xEFBE4786E49B69C1ULL));
+	s1 = _mm_sha256rnds2_epu32(s1, s0, pmsg);
+	ptmp = _mm_alignr_epi8(m0, m3, 4);
+	m1 = _mm_add_epi32(m1, ptmp);
+	m1 = _mm_sha256msg2_epu32(m1, m0);
+	pmsg = _mm_shuffle_epi32(pmsg, 0x0E);
+	s0 = _mm_sha256rnds2_epu32(s0, s1, pmsg);
+	m3 = _mm_sha256msg1_epu32(m3, m0);
+	/* rounds 20-23 */
+	pmsg = _mm_add_epi32(m1, _mm_set_epi64x(0x76F988DA5CB0A9DCULL, 0x4A7484AA2DE92C6FULL));
+	s1 = _mm_sha256rnds2_epu32(s1, s0, pmsg);
+	ptmp = _mm_alignr_epi8(m1, m0, 4);
+	m2 = _mm_add_epi32(m2, ptmp);
+	m2 = _mm_sha256msg2_epu32(m2, m1);
+	pmsg = _mm_shuffle_epi32(pmsg, 0x0E);
+	s0 = _mm_sha256rnds2_epu32(s0, s1, pmsg);
+	m0 = _mm_sha256msg1_epu32(m0, m1);
+	/* rounds 24-27 */
+	pmsg = _mm_add_epi32(m2, _mm_set_epi64x(0xBF597FC7B00327C8ULL, 0xA831C66D983E5152ULL));
+	s1 = _mm_sha256rnds2_epu32(s1, s0, pmsg);
+	ptmp = _mm_alignr_epi8(m2, m1, 4);
+	m3 = _mm_add_epi32(m3, ptmp);
+	m3 = _mm_sha256msg2_epu32(m3, m2);
+	pmsg = _mm_shuffle_epi32(pmsg, 0x0E);
+	s0 = _mm_sha256rnds2_epu32(s0, s1, pmsg);
+	m1 = _mm_sha256msg1_epu32(m1, m2);
+	/* rounds 28-31 */
+	pmsg = _mm_add_epi32(m3, _mm_set_epi64x(0x1429296706CA6351ULL, 0xD5A79147C6E00BF3ULL));
+	s1 = _mm_sha256rnds2_epu32(s1, s0, pmsg);
+	ptmp = _mm_alignr_epi8(m3, m2, 4);
+	m0 = _mm_add_epi32(m0, ptmp);
+	m0 = _mm_sha256msg2_epu32(m0, m3);
+	pmsg = _mm_shuffle_epi32(pmsg, 0x0E);
+	s0 = _mm_sha256rnds2_epu32(s0, s1, pmsg);
+	m2 = _mm_sha256msg1_epu32(m2, m3);
+	/* rounds 32-35 */
+	pmsg = _mm_add_epi32(m0, _mm_set_epi64x(0x53380D134D2C6DFCULL, 0x2E1B213827B70A85ULL));
+	s1 = _mm_sha256rnds2_epu32(s1, s0, pmsg);
+	ptmp = _mm_alignr_epi8(m0, m3, 4);
+	m1 = _mm_add_epi32(m1, ptmp);
+	m1 = _mm_sha256msg2_epu32(m1, m0);
+	pmsg = _mm_shuffle_epi32(pmsg, 0x0E);
+	s0 = _mm_sha256rnds2_epu32(s0, s1, pmsg);
+	m3 = _mm_sha256msg1_epu32(m3, m0);
+	/* rounds 36-39 */
+	pmsg = _mm_add_epi32(m1, _mm_set_epi64x(0x92722C8581C2C92EULL, 0x766A0ABB650A7354ULL));
+	s1 = _mm_sha256rnds2_epu32(s1, s0, pmsg);
+	ptmp = _mm_alignr_epi8(m1, m0, 4);
+	m2 = _mm_add_epi32(m2, ptmp);
+	m2 = _mm_sha256msg2_epu32(m2, m1);
+	pmsg = _mm_shuffle_epi32(pmsg, 0x0E);
+	s0 = _mm_sha256rnds2_epu32(s0, s1, pmsg);
+	m0 = _mm_sha256msg1_epu32(m0, m1);
+	/* rounds 40-43 */
+	pmsg = _mm_add_epi32(m2, _mm_set_epi64x(0xC76C51A3C24B8B70ULL, 0xA81A664BA2BFE8A1ULL));
+	s1 = _mm_sha256rnds2_epu32(s1, s0, pmsg);
+	ptmp = _mm_alignr_epi8(m2, m1, 4);
+	m3 = _mm_add_epi32(m3, ptmp);
+	m3 = _mm_sha256msg2_epu32(m3, m2);
+	pmsg = _mm_shuffle_epi32(pmsg, 0x0E);
+	s0 = _mm_sha256rnds2_epu32(s0, s1, pmsg);
+	m1 = _mm_sha256msg1_epu32(m1, m2);
+	/* rounds 44-47 */
+	pmsg = _mm_add_epi32(m3, _mm_set_epi64x(0x106AA070F40E3585ULL, 0xD6990624D192E819ULL));
+	s1 = _mm_sha256rnds2_epu32(s1, s0, pmsg);
+	ptmp = _mm_alignr_epi8(m3, m2, 4);
+	m0 = _mm_add_epi32(m0, ptmp);
+	m0 = _mm_sha256msg2_epu32(m0, m3);
+	pmsg = _mm_shuffle_epi32(pmsg, 0x0E);
+	s0 = _mm_sha256rnds2_epu32(s0, s1, pmsg);
+	m2 = _mm_sha256msg1_epu32(m2, m3);
+	/* rounds 48-51 */
+	pmsg = _mm_add_epi32(m0, _mm_set_epi64x(0x34B0BCB52748774CULL, 0x1E376C0819A4C116ULL));
+	s1 = _mm_sha256rnds2_epu32(s1, s0, pmsg);
+	ptmp = _mm_alignr_epi8(m0, m3, 4);
+	m1 = _mm_add_epi32(m1, ptmp);
+	m1 = _mm_sha256msg2_epu32(m1, m0);
+	pmsg = _mm_shuffle_epi32(pmsg, 0x0E);
+	s0 = _mm_sha256rnds2_epu32(s0, s1, pmsg);
+	m3 = _mm_sha256msg1_epu32(m3, m0);
+	/* rounds 52-55 */
+	pmsg = _mm_add_epi32(m1, _mm_set_epi64x(0x682E6FF35B9CCA4FULL, 0x4ED8AA4A391C0CB3ULL));
+	s1 = _mm_sha256rnds2_epu32(s1, s0, pmsg);
+	ptmp = _mm_alignr_epi8(m1, m0, 4);
+	m2 = _mm_add_epi32(m2, ptmp);
+	m2 = _mm_sha256msg2_epu32(m2, m1);
+	pmsg = _mm_shuffle_epi32(pmsg, 0x0E);
+	s0 = _mm_sha256rnds2_epu32(s0, s1, pmsg);
+	/* rounds 56-59 */
+	pmsg = _mm_add_epi32(m2, _mm_set_epi64x(0x8CC7020884C87814ULL, 0x78A5636F748F82EEULL));
+	s1 = _mm_sha256rnds2_epu32(s1, s0, pmsg);
+	ptmp = _mm_alignr_epi8(m2, m1, 4);
+	m3 = _mm_add_epi32(m3, ptmp);
+	m3 = _mm_sha256msg2_epu32(m3, m2);
+	pmsg = _mm_shuffle_epi32(pmsg, 0x0E);
+	s0 = _mm_sha256rnds2_epu32(s0, s1, pmsg);
+	/* rounds 60-63 */
+	pmsg = _mm_add_epi32(m3, _mm_set_epi64x(0xC67178F2BEF9A3F7ULL, 0xA4506CEB90BEFFFAULL));
+	s1 = _mm_sha256rnds2_epu32(s1, s0, pmsg);
+	pmsg = _mm_shuffle_epi32(pmsg, 0x0E);
+	s0 = _mm_sha256rnds2_epu32(s0, s1, pmsg);
+
+	/* combine state */
+	s0 = _mm_add_epi32(s0, t0);
+	s1 = _mm_add_epi32(s1, t1);
+	ptmp = _mm_shuffle_epi32(s0, 0x1B);
+	s1 = _mm_shuffle_epi32(s1, 0xB1);
+	s0 = _mm_blend_epi16(ptmp, s1, 0xF0);
+	s1 = _mm_alignr_epi8(s1, ptmp, 8);
+
+	/* store */
+	_mm_storeu_si128((__m128i*)output, s0);
+	_mm_storeu_si128((__m128i*)output + (4 * sizeof(uint32_t)), s1);
+}
+#else
 void sha256_permute(uint32_t* output, const uint8_t* message)
 {
 	uint32_t a;
@@ -413,6 +590,7 @@ void sha256_permute(uint32_t* output, const uint8_t* message)
 	output[6] += g;
 	output[7] += h;
 }
+#endif
 
 /* SHA2-384 */
 
@@ -439,7 +617,7 @@ static void sha384_increase(sha384_state* state, size_t length)
 	}
 }
 
-void sha384_compute(uint8_t* output, const uint8_t* message, size_t msglen)
+void sha2_compute384(uint8_t* output, const uint8_t* message, size_t msglen)
 {
 	sha384_state state;
 	size_t blocks;
@@ -490,7 +668,7 @@ void sha384_finalize(sha384_state* state, uint8_t* output, const uint8_t* messag
 	pad[msglen] = 128;
 	++msglen;
 
-	// padding
+	/* padding */
 	if (msglen < SHA2_384_RATE)
 	{
 		clear8(pad + msglen, SHA2_384_RATE - msglen);
@@ -502,12 +680,12 @@ void sha384_finalize(sha384_state* state, uint8_t* output, const uint8_t* messag
 		clear8(pad, SHA2_384_RATE);
 	}
 
-	// finalize state with counter and last compression
+	/* finalize state with counter and last compression */
 	be64to8(pad + 112, state->t[1]);
 	be64to8(pad + 120, bitLen);
 	sha384_permute(state->state, pad);
 
-	for (i = 0; i < SHA2_384_SIZE; i += 8)
+	for (i = 0; i < SHA2_384_HASH; i += 8)
 	{
 		be64to8(output + i, state->state[i / 8]);
 	}
@@ -517,7 +695,7 @@ void sha384_initialize(sha384_state* state)
 {
 	size_t i;
 
-	for (i = 0; i < SHA2_STATESIZE; ++i)
+	for (i = 0; i < SHA2_STATE_SIZE; ++i)
 	{
 		state->state[i] = sha384_iv[i];
 	}
@@ -924,7 +1102,7 @@ static void sha512_increase(sha512_state* state, size_t length)
 	}
 }
 
-void sha512_compute(uint8_t* output, const uint8_t* message, size_t msglen)
+void sha2_compute512(uint8_t* output, const uint8_t* message, size_t msglen)
 {
 	sha512_state state;
 	size_t blocks;
@@ -975,7 +1153,7 @@ void sha512_finalize(sha512_state* state, uint8_t* output, const uint8_t* messag
 	pad[msglen] = 128;
 	++msglen;
 
-	// padding
+	/* padding */
 	if (msglen < SHA2_512_RATE)
 	{
 		clear8(pad + msglen, SHA2_512_RATE - msglen);
@@ -987,12 +1165,12 @@ void sha512_finalize(sha512_state* state, uint8_t* output, const uint8_t* messag
 		clear8(pad, SHA2_512_RATE);
 	}
 
-	// finalize state with counter and last compression
+	/* finalize state with counter and last compression */
 	be64to8(pad + 112, state->t[1]);
 	be64to8(pad + 120, bitLen);
 	sha512_permute(state->state, pad);
 
-	for (i = 0; i < SHA2_512_SIZE; i += 8)
+	for (i = 0; i < SHA2_512_HASH; i += 8)
 	{
 		be64to8(output + i, state->state[i / 8]);
 	}
@@ -1002,7 +1180,7 @@ void sha512_initialize(sha512_state* state)
 {
 	size_t i;
 
-	for (i = 0; i < SHA2_STATESIZE; ++i)
+	for (i = 0; i < SHA2_STATE_SIZE; ++i)
 	{
 		state->state[i] = sha512_iv[i];
 	}
@@ -1392,7 +1570,7 @@ void hmac256_compute(uint8_t* output, const uint8_t* message, size_t msglen, con
 	const uint8_t OPAD = 0x5C;
 	uint8_t ipad[SHA2_256_RATE] = { 0 };
 	uint8_t opad[SHA2_256_RATE];
-	uint8_t tmpv[SHA2_256_SIZE];
+	uint8_t tmpv[SHA2_256_HASH];
 	sha256_state state;
 	size_t i;
 
@@ -1436,7 +1614,7 @@ void hmac256_compute(uint8_t* output, const uint8_t* message, size_t msglen, con
 	sha256_finalize(&state, tmpv, message, msglen);
 	sha256_initialize(&state);
 	sha256_blockupdate(&state, opad, 1);
-	sha256_finalize(&state, output, tmpv, SHA2_256_SIZE);
+	sha256_finalize(&state, output, tmpv, SHA2_256_HASH);
 }
 
 void hmac256_blockupdate(hmac256_state* state, const uint8_t* message, size_t nblocks)
@@ -1446,7 +1624,7 @@ void hmac256_blockupdate(hmac256_state* state, const uint8_t* message, size_t nb
 
 void hmac256_finalize(hmac256_state* state, uint8_t* output, const uint8_t* message, size_t msglen)
 {
-	uint8_t tmpv[SHA2_256_SIZE];
+	uint8_t tmpv[SHA2_256_HASH];
 	size_t oft;
 
 	oft = 0;
@@ -1461,7 +1639,7 @@ void hmac256_finalize(hmac256_state* state, uint8_t* output, const uint8_t* mess
 	sha256_finalize(&state->pstate, tmpv, message + oft, msglen);
 	sha256_initialize(&state->pstate);
 	sha256_blockupdate(&state->pstate, state->opad, 1);
-	sha256_finalize(&state->pstate, output, tmpv, SHA2_256_SIZE);
+	sha256_finalize(&state->pstate, output, tmpv, SHA2_256_HASH);
 }
 
 void hmac256_initialize(hmac256_state* state, const uint8_t* key, size_t keylen)
@@ -1514,7 +1692,7 @@ void hmac512_compute(uint8_t* output, const uint8_t* message, size_t msglen, con
 	const uint8_t OPAD = 0x5C;
 	uint8_t ipad[SHA2_512_RATE] = { 0 };
 	uint8_t opad[SHA2_512_RATE];
-	uint8_t tmpv[SHA2_512_SIZE];
+	uint8_t tmpv[SHA2_512_HASH];
 	sha512_state state;
 	size_t i;
 
@@ -1558,7 +1736,7 @@ void hmac512_compute(uint8_t* output, const uint8_t* message, size_t msglen, con
 	sha512_finalize(&state, tmpv, message, msglen);
 	sha512_initialize(&state);
 	sha512_blockupdate(&state, opad, 1);
-	sha512_finalize(&state, output, tmpv, SHA2_512_SIZE);
+	sha512_finalize(&state, output, tmpv, SHA2_512_HASH);
 }
 
 void hmac512_blockupdate(hmac512_state* state, const uint8_t* message, size_t nblocks)
@@ -1568,7 +1746,7 @@ void hmac512_blockupdate(hmac512_state* state, const uint8_t* message, size_t nb
 
 void hmac512_finalize(hmac512_state* state, uint8_t* output, const uint8_t* message, size_t msglen)
 {
-	uint8_t tmpv[SHA2_512_SIZE];
+	uint8_t tmpv[SHA2_512_HASH];
 	size_t oft;
 
 	oft = 0;
@@ -1583,7 +1761,7 @@ void hmac512_finalize(hmac512_state* state, uint8_t* output, const uint8_t* mess
 	sha512_finalize(&state->pstate, tmpv, message + oft, msglen);
 	sha512_initialize(&state->pstate);
 	sha512_blockupdate(&state->pstate, state->opad, 1);
-	sha512_finalize(&state->pstate, output, tmpv, SHA2_512_SIZE);
+	sha512_finalize(&state->pstate, output, tmpv, SHA2_512_HASH);
 }
 
 void hmac512_initialize(hmac512_state* state, const uint8_t* key, size_t keylen)
@@ -1634,7 +1812,7 @@ void hkdf256_expand(uint8_t* output, size_t outlen, const uint8_t* key, size_t k
 {
 	hmac256_state state;
 	uint8_t msg[SHA2_256_RATE] = { 0 };
-	uint8_t otp[SHA2_256_SIZE] = { 0 };
+	uint8_t otp[SHA2_256_HASH] = { 0 };
 	size_t ctr;
 	size_t i;
 	size_t ioft;
@@ -1653,23 +1831,23 @@ void hkdf256_expand(uint8_t* output, size_t outlen, const uint8_t* key, size_t k
 
 		if (ctr != 0)
 		{
-			for (i = 0; i < SHA2_256_SIZE; ++i)
+			for (i = 0; i < SHA2_256_HASH; ++i)
 			{
 				msg[i] = otp[i];
 			}
 
-			slen = SHA2_256_SIZE;
+			slen = SHA2_256_HASH;
 
-			if (infolen >= SHA2_256_SIZE)
+			if (infolen >= SHA2_256_HASH)
 			{
-				for (i = 0; i < SHA2_256_SIZE; ++i)
+				for (i = 0; i < SHA2_256_HASH; ++i)
 				{
 					msg[slen + i] = info[i];
 				}
 
 				hmac256_blockupdate(&state, msg, 1);
-				mlen -= SHA2_256_SIZE;
-				ioft += SHA2_256_SIZE;
+				mlen -= SHA2_256_HASH;
+				ioft += SHA2_256_HASH;
 				slen = 0;
 			}
 
@@ -1708,7 +1886,7 @@ void hkdf256_expand(uint8_t* output, size_t outlen, const uint8_t* key, size_t k
 			hmac256_finalize(&state, otp, msg, mlen + 1);
 		}
 
-		rmd = min((uint32_t)outlen, SHA2_256_SIZE);
+		rmd = min((uint32_t)outlen, SHA2_256_HASH);
 
 		for (i = 0; i < rmd; ++i)
 		{
@@ -1726,7 +1904,7 @@ void hkdf512_expand(uint8_t* output, size_t outlen, const uint8_t* key, size_t k
 {
 	hmac512_state state;
 	uint8_t msg[SHA2_512_RATE] = { 0 };
-	uint8_t otp[SHA2_512_SIZE] = { 0 };
+	uint8_t otp[SHA2_512_HASH] = { 0 };
 	size_t ctr;
 	size_t i;
 	size_t ioft;
@@ -1745,23 +1923,23 @@ void hkdf512_expand(uint8_t* output, size_t outlen, const uint8_t* key, size_t k
 
 		if (ctr != 0)
 		{
-			for (i = 0; i < SHA2_512_SIZE; ++i)
+			for (i = 0; i < SHA2_512_HASH; ++i)
 			{
 				msg[i] = otp[i];
 			}
 
-			slen = SHA2_512_SIZE;
+			slen = SHA2_512_HASH;
 
-			if (infolen >= SHA2_512_SIZE)
+			if (infolen >= SHA2_512_HASH)
 			{
-				for (i = 0; i < SHA2_512_SIZE; ++i)
+				for (i = 0; i < SHA2_512_HASH; ++i)
 				{
 					msg[slen + i] = info[i];
 				}
 
 				hmac512_blockupdate(&state, msg, 1);
-				mlen -= SHA2_512_SIZE;
-				ioft += SHA2_512_SIZE;
+				mlen -= SHA2_512_HASH;
+				ioft += SHA2_512_HASH;
 				slen = 0;
 			}
 
@@ -1800,7 +1978,7 @@ void hkdf512_expand(uint8_t* output, size_t outlen, const uint8_t* key, size_t k
 			hmac512_finalize(&state, otp, msg, mlen + 1);
 		}
 
-		rmd = min((uint32_t)outlen, SHA2_512_SIZE);
+		rmd = min((uint32_t)outlen, SHA2_512_HASH);
 
 		for (i = 0; i < rmd; ++i)
 		{

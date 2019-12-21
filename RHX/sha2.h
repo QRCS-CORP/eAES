@@ -1,17 +1,136 @@
 /**
 * \file sha2.h
-* \brief <b>SHA2 header definition</b> \n
-* Contains the public api and documentation for SHA3 digest and SHAKE implementations.
-*
 * \author John Underhill
 * \date May 23, 2019
-* \remarks For usage examples, see sha3_kat.h
+*
+* \brief <b>SHA2 header definition</b> \n
+* Contains the public api and documentation for SHA2 digests, HMAC and HKDF implementations.
+*
+* <b>SHA2-512 hash computation using long-form api</b> \n
+* \code
+* // external message array
+* const size_t MSG_LEN = 200;
+* uint8_t msg[200] = { ... };
+* ...
+*
+* uint8_t otp[SHA2_512_HASH] = { 0 };
+* sha512_state state;
+* const size_t BLK_CNT = MSG_LEN / SHA3_512_RATE;
+* size_t msgpos;
+*
+* msgpos = 0;
+* clear8(otp, sizeof(otp));
+*
+* // initialize the SHA2 state
+* sha512_initialize(&state);
+*
+* // process full blocks of message
+* if (BLK_CNT != 0)
+* {
+*	sha512_blockupdate(&state, msg, BLK_CNT);
+* 	msgpos += (SHA3_512_RATE * BLK_CNT);
+* }
+*
+* // finalize the message
+* sha512_finalize(&state, otp, msg + msgpos, MSG_LEN - msgpos);
+* \endcode
+*
+*
+* <b>HMAC-512 MAC code generation using long-form api</b> \n
+* \code
+*
+* \endcode
+*
+* \remarks For usage examples, see sha3_kat.h. \n
+*
+* \ section Links
+* NIST: The SHA-2 Standard http://csrc.nist.gov/publications/fips/fips180-4/fips-180-4.pdf"
+*
+* Analysis of SIMD Applicability to SHA Algorithms https://software.intel.com/sites/default/files/m/b/9/b/aciicmez.pdf
+*
+* \remarks
+* <p>The SHA2 and HMAC implementations use two different forms of api: short-form and long-form. \n
+* The short-form api, which initializes the state, processes a message, and finalizes by producing output, all in a single function call,
+* for example; sha2_compute512(uint8_t* output, const uint8_t* message, size_t msglen),
+* the entire message array is processed and the hash code is written to the output array. \n
+* The long-form api uses an initialization call to prepare the state, a blockupdate call if the message is longer than a single message block,
+* and the finalize call, which finalizes the state and generates a hash or mac-code. \n
+* The HKDF key derivation functions HKDF(HMAC(SHA2-256/512)), use only the short-form api, single-call functions, to generate pseudo-random to an output array. \n
+* Each of the function families (SHA2, HMAC, HKDF), have a corresponding set of reference constants associated with that member, example;
+* HKDF_256_KEY is the minimum expected HKDF-256 key size in bytes, HMAC_512_MAC is the minimum size of the HMAC-512 output mac-code output array,
+* and SHA2_512_RATE is the SHA2-512 message absorbtion rate.</p>
+*
+* For additional usage examples, see sha2_kat.h
+*
 */
 
-#ifndef QCX_SHA2_H
-#define QCX_SHA2_H
+#ifndef QSC_SHA2_H
+#define QSC_SHA2_H
 
 #include "common.h"
+
+/*!
+\def SHA2_SHANI_ENABLED
+* Enables the SHA2 permutation intrinsics.
+* For testing only; add this flag to your preprocessor defintions to enable SHA-NI intrinsics.
+*/
+#ifndef SHA2_SHANI_ENABLED
+//#	define SHA2_SHANI_ENABLED
+#endif
+
+/*!
+\def HKDF_256_KEY
+* The HKDF-256 key size in bytes
+*/
+#define HKDF_256_KEY 32
+
+/*!
+\def HKDF_512_KEY
+* The HKDF-512 key size in bytes
+*/
+#define HKDF_512_KEY 64
+
+/*!
+\def HMAC_256_KEY
+* The recommended HMAC(SHA2-256) key size, minimum is 32 bytes
+*/
+#define HMAC_256_KEY 64
+
+/*!
+\def HMAC_512_KEY
+* The recommended HMAC(SHA2-512) key size minimum is 64 bytes
+*/
+#define HMAC_512_KEY 128
+
+/*!
+\def HMAC_256_MAC
+* The HMAC-256 mac-code size in bytes
+*/
+#define HMAC_256_MAC 32
+
+/*!
+\def HMAC_512_MAC
+* The HMAC-512 mac-code size in bytes
+*/
+#define HMAC_512_MAC 64
+
+/*!
+\def SHA2_256_HASH
+* The SHA2-256 hash size in bytes
+*/
+#define SHA2_256_HASH 32
+
+/*!
+\def SHA2_384_HASH
+* The SHA2-384 hash size in bytes
+*/
+#define SHA2_384_HASH 48
+
+/*!
+\def SHA2_512_HASH
+* The SHA2-512 hash size in bytes
+*/
+#define SHA2_512_HASH 64
 
 /*!
 \def SHA2_256_ROUNDS
@@ -30,24 +149,6 @@
 * the number of rounds in the compact SHA2-512 permutation
 */
 #define SHA2_512_ROUNDS 80
-
-/*!
-\def SHA2_256_SIZE
-* The SHA2-256 hash size in bytes
-*/
-#define SHA2_256_SIZE 32
-
-/*!
-\def SHA2_384_SIZE
-* The SHA2-384 hash size in bytes
-*/
-#define SHA2_384_SIZE 48
-
-/*!
-\def SHA2_512_SIZE
-* The SHA2-512 hash size in bytes
-*/
-#define SHA2_512_SIZE 64
 
 /*!
 \def SHA2_256_RATE
@@ -71,10 +172,13 @@
 \def SHA2_256_STATESIZE
 * The SHA2-256 state array size
 */
-#define SHA2_STATESIZE 8
+#define SHA2_STATE_SIZE 8
 
-/* SHA2-256 */
+/* sha2-256 */
 
+/*! \struct sha256_state
+* The SHA2-256 digest state array
+*/
 typedef struct
 {
 	uint32_t state[8];
@@ -83,6 +187,7 @@ typedef struct
 
 /**
 * \brief Process a message with SHA2-256 and returns the hash code in the output byte array.
+* Short form api: processes the entire message and computes the hash code with a single call.
 *
 * \warning The output array must be at least 32 bytes in length.
 *
@@ -90,10 +195,11 @@ typedef struct
 * \param message: [const] The message input byte array
 * \param msglen: The number of message bytes to process
 */
-void sha256_compute(uint8_t* output, const uint8_t* message, size_t msglen);
+void sha2_compute256(uint8_t* output, const uint8_t* message, size_t msglen);
 
 /**
 * \brief Update SHA2-256 with blocks of input.
+* Long form api: must be used in conjunction with the initialize and finalize functions.
 * Absorbs a multiple of 64-byte block lengths of input message into the state.
 *
 * \warning Message length must be a multiple of the rate size. \n
@@ -107,6 +213,7 @@ void sha256_blockupdate(sha256_state* state, const uint8_t* message, size_t nblo
 
 /**
 * \brief Finalize the message state and returns the hash value in output.
+* Long form api: must be used in conjunction with the initialize and blockupdate functions.
 * Absorb the last block of message and creates the hash value. \n
 * Produces a 32 byte output code.
 *
@@ -123,6 +230,7 @@ void sha256_finalize(sha256_state* state, uint8_t* output, const uint8_t* messag
 
 /**
 * \brief Initializes a SHA2-256 state structure, must be called before message processing.
+* Long form api: must be used in conjunction with the blockupdate and finalize functions.
 *
 * \param state: [struct] The function state
 */
@@ -130,6 +238,7 @@ void sha256_initialize(sha256_state* state);
 
 /**
 * \brief The SHA2-256 permution function.
+* Internal function: called by protocol hash and generation functions, or in the construction of other external protocols.
 * Permutes the state array.
 *
 * \param output: The function state; must be initialized
@@ -137,8 +246,11 @@ void sha256_initialize(sha256_state* state);
 */
 void sha256_permute(uint32_t* output, const uint8_t* input);
 
-/* SHA2-384 */
+/* sha2-384 */
 
+/*! \struct sha384_state
+* The SHA2-384 digest state array
+*/
 typedef struct
 {
 	uint64_t state[8];
@@ -147,6 +259,7 @@ typedef struct
 
 /**
 * \brief Process a message with SHA2-384 and returns the hash code in the output byte array.
+* Short form api: processes the entire message and computes the hash code with a single call.
 *
 * \warning The output array must be at least 48 bytes in length.
 *
@@ -154,10 +267,11 @@ typedef struct
 * \param message: [const] The message input byte array
 * \param msglen The number of message bytes to process
 */
-void sha384_compute(uint8_t* output, const uint8_t* message, size_t msglen);
+void sha2_compute384(uint8_t* output, const uint8_t* message, size_t msglen);
 
 /**
 * \brief Update SHA2-384 with blocks of input.
+* Long form api: must be used in conjunction with the initialize and finalize functions.
 * Absorbs a multiple of 128-byte block sized lengths of input message into the state.
 *
 * \warning Message length must be a multiple of the rate size. \n
@@ -171,6 +285,7 @@ void sha384_blockupdate(sha384_state* state, const uint8_t* message, size_t nblo
 
 /**
 * \brief Finalize the message state and returns the SHA2-384 hash value in output.
+* Long form api: must be used in conjunction with the initialize and blockupdate functions.
 * Absorb the last block of message and creates the hash value. \n
 * Produces a 48 byte output code.
 *
@@ -187,6 +302,7 @@ void sha384_finalize(sha384_state* state, uint8_t* output, const uint8_t* messag
 
 /**
 * \brief Initializes a SHA2-384 state structure, must be called before message processing.
+* Long form api: must be used in conjunction with the blockupdate and finalize functions.
 *
 * \param state: [struct] The function state
 */
@@ -194,6 +310,7 @@ void sha384_initialize(sha384_state* state);
 
 /**
 * \brief The SHA2-384 permution function.
+* Internal function: called by protocol hash and generation functions, or in the construction of other external protocols.
 * Permutes the state array.
 *
 * \param state: The function state; must be initialized
@@ -201,8 +318,11 @@ void sha384_initialize(sha384_state* state);
 */
 void sha384_permute(uint64_t* output, const uint8_t* input);
 
-/* SHA2-512 */
+/* sha2-512 */
 
+/*! \struct sha512_state
+* The SHA2-512 digest state array
+*/
 typedef struct
 {
 	uint64_t state[8];
@@ -211,6 +331,7 @@ typedef struct
 
 /**
 * \brief Process a message with SHA2-512 and returns the hash code in the output byte array.
+* Short form api: processes the entire message and computes the hash code with a single call.
 *
 * \warning The output array must be at least 64 bytes in length.
 *
@@ -218,10 +339,11 @@ typedef struct
 * \param message: [const] The message input byte array
 * \param msglen The number of message bytes to process
 */
-void sha512_compute(uint8_t* output, const uint8_t* message, size_t msglen);
+void sha2_compute512(uint8_t* output, const uint8_t* message, size_t msglen);
 
 /**
 * \brief Update SHA2-512 with blocks of input.
+* Long form api: must be used in conjunction with the initialize and finalize functions.
 * Absorbs a multiple of 128-byte block sized lengths of input message into the state.
 *
 * \warning Message length must be a multiple of the rate size. \n
@@ -235,6 +357,7 @@ void sha512_blockupdate(sha512_state* state, const uint8_t* message, size_t nblo
 
 /**
 * \brief Finalize the message state and returns the SHA2-512 hash value in output.
+* Long form api: must be used in conjunction with the initialize and blockupdate functions.
 * Absorb the last block of message and creates the hash value. \n
 * Produces a 64 byte output code.
 *
@@ -251,6 +374,7 @@ void sha512_finalize(sha512_state* state, uint8_t* output, const uint8_t* messag
 
 /**
 * \brief Initializes a SHA2-512 state structure, must be called before message processing.
+* Long form api: must be used in conjunction with the blockupdate and finalize functions.
 *
 * \param state: [struct] The function state
 */
@@ -258,6 +382,7 @@ void sha512_initialize(sha512_state* state);
 
 /**
 * \brief The SHA2-512 permution function.
+* Internal function: called by protocol hash and generation functions, or in the construction of other external protocols.
 * Permutes the state array.
 *
 * \param state: The function state; must be initialized
@@ -265,8 +390,11 @@ void sha512_initialize(sha512_state* state);
 */
 void sha512_permute(uint64_t* output, const uint8_t* input);
 
-/* HMAC-256 */
+/* hmac-256 */
 
+/*! \struct hmac256_state
+* The HMAC(SHA2-256) state array
+*/
 typedef struct
 {
 	sha256_state pstate;
@@ -276,6 +404,7 @@ typedef struct
 
 /**
 * \brief Process a message with HMAC(SHA2-256) and returns the hash code in the output byte array.
+* Short form api: processes the key and complete message, and generates the MAC code with a single call.
 *
 * \warning The output array must be at least 32 bytes in length.
 *
@@ -289,6 +418,7 @@ void hmac256_compute(uint8_t* output, const uint8_t* message, size_t msglen, con
 
 /**
 * \brief Update HMAC-256 with blocks of input.
+* Long form api: must be used in conjunction with the initialize and finalize functions.
 * Absorbs a multiple of 64-byte block lengths of input message into the state.
 *
 * \warning Message length must be a multiple of the rate size. \n
@@ -302,6 +432,7 @@ void hmac256_blockupdate(hmac256_state* state, const uint8_t* message, size_t nb
 
 /**
 * \brief Finalize the HMAC-256 message state and return the hash value in output.
+* Long form api: must be used in conjunction with the initialize and blockupdate functions.
 * Absorb the last block of message and creates the hash value. \n
 * Produces a 32 byte output code.
 *
@@ -318,6 +449,7 @@ void hmac256_finalize(hmac256_state* state, uint8_t* output, const uint8_t* mess
 
 /**
 * \brief Initializes a HMAC-256 state structure with a key, must be called before message processing.
+* Long form api: must be used in conjunction with the blockupdate and finalize functions.
 *
 * \param state: [struct] The function state
 * \param key: [const] The secret key array
@@ -325,8 +457,11 @@ void hmac256_finalize(hmac256_state* state, uint8_t* output, const uint8_t* mess
 */
 void hmac256_initialize(hmac256_state* state, const uint8_t* key, size_t keylen);
 
-/* HMAC-512 */
+/* hmac-512 */
 
+/*! \struct hmac512_state
+* The HMAC(SHA2-512) state array
+*/
 typedef struct
 {
 	sha512_state pstate;
@@ -336,6 +471,7 @@ typedef struct
 
 /**
 * \brief Process a message with SHA2-512 and returns the hash code in the output byte array.
+* Short form api: processes the key and complete message, and generates the MAC code with a single call.
 *
 * \warning The output array must be at least 128 bytes in length.
 *
@@ -349,6 +485,7 @@ void hmac512_compute(uint8_t* output, const uint8_t* message, size_t msglen, con
 
 /**
 * \brief Update HMAC-512 with blocks of input.
+* Long form api: must be used in conjunction with the initialize and finalize functions.
 * Absorbs a multiple of 128-byte block lengths of input message into the state.
 *
 * \warning Message length must be a multiple of the rate size. \n
@@ -362,6 +499,7 @@ void hmac512_blockupdate(hmac512_state* state, const uint8_t* message, size_t nb
 
 /**
 * \brief Finalize the HMAC-512 message state and return the hash value in output.
+* Long form api: must be used in conjunction with the initialize and blockupdate functions.
 * Absorb the last block of message and creates the hash value. \n
 * Produces a 64 byte output code.
 *
@@ -378,6 +516,7 @@ void hmac512_finalize(hmac512_state* state, uint8_t* output, const uint8_t* mess
 
 /**
 * \brief Initializes a HMAC-512 state structure with a key, must be called before message processing.
+* Long form api: must be used in conjunction with the blockupdate and finalize functions.
 *
 * \param state: [struct] The function state
 * \param key: [const] The secret key array
@@ -385,10 +524,11 @@ void hmac512_finalize(hmac512_state* state, uint8_t* output, const uint8_t* mess
 */
 void hmac512_initialize(hmac512_state* state, const uint8_t* key, size_t keylen);
 
-/* HKDF */
+/* hkdf */
 
 /**
 * \brief Initialize and instance of HKDF(HMAC(SHA2-256)), and output an array of pseudo-random.
+* Short form api: initializes with the key and user info, and generates the output pseudo-random with a single call.
 *
 * \param output: The output pseudo-random byte array
 * \param key: [const] The HKDF key array
@@ -400,6 +540,7 @@ void hkdf256_expand(uint8_t* output, size_t outlen, const uint8_t* key, size_t k
 
 /**
 * \brief Initialize and instance of HKDF(HMAC(SHA2-512)), and output an array of pseudo-random.
+* Short form api: initializes with the key and user info, and generates the output pseudo-random with a single call.
 *
 * \param output: The output pseudo-random byte array
 * \param key: [const] The HKDF key array
