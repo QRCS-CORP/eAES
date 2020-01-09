@@ -539,6 +539,17 @@ void hmac512_initialize(hmac512_state* state, const uint8_t* key, size_t keylen)
 void hkdf256_expand(uint8_t* output, size_t outlen, const uint8_t* key, size_t keylen, const uint8_t* info, size_t infolen);
 
 /**
+* \brief Extract a key from a combined key and salt input using HMAC(SHA2-256).
+*
+* \param output: The output pseudo-random byte array
+* \param key: [const] The HKDF key array
+* \param keylen: The key array length
+* \param salt: [const] The salt array
+* \param saltlen: The salt array length
+*/
+void hkdf256_extract(uint8_t* output, size_t outlen, const uint8_t* key, size_t keylen, const uint8_t* salt, size_t saltlen);
+
+/**
 * \brief Initialize and instance of HKDF(HMAC(SHA2-512)), and output an array of pseudo-random.
 * Short form api: initializes with the key and user info, and generates the output pseudo-random with a single call.
 *
@@ -549,6 +560,17 @@ void hkdf256_expand(uint8_t* output, size_t outlen, const uint8_t* key, size_t k
 * \param infolen: The info array length
 */
 void hkdf512_expand(uint8_t* output, size_t outlen, const uint8_t* key, size_t keylen, const uint8_t* info, size_t infolen);
+
+/**
+* \brief Extract a key from a combined key and salt input using HMAC(SHA2-512).
+*
+* \param output: The output pseudo-random byte array
+* \param key: [const] The HKDF key array
+* \param keylen: The key array length
+* \param salt: [const] The salt array
+* \param saltlen: The salt array length
+*/
+void hkdf512_extract(uint8_t* output, size_t outlen, const uint8_t* key, size_t keylen, const uint8_t* salt, size_t saltlen);
 
 #endif
 

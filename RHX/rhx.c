@@ -1,18 +1,121 @@
 #include "rhx.h"
 #include "intutils.h"
+#ifdef RHX_SHAKE_EXTENSION
+#	include "sha3.h"
+#else
+#	include "sha2.h"
+#endif
 #include <assert.h>
 #include <stdlib.h>
 
-#if defined RHX_CSHAKE_EXTENSION
-#	define HBA256_MKEY_LENGTH 32
-#	define HBA512_MKEY_LENGTH 64
+/*!
+\def AES128_ROUND_COUNT
+* The number of Rijndael mixing rounds used by AES-128.
+*/
+#define AES128_ROUND_COUNT 10
+
+/*!
+\def AES256_ROUND_COUNT
+* The number of Rijndael mixing rounds used by AES-256.
+*/
+#define AES256_ROUND_COUNT 14
+
+/*!
+\def RHX256_ROUND_COUNT
+* The number of Rijndael mixing rounds used by RHX-256.
+*/
+#define RHX256_ROUND_COUNT 22
+
+/*!
+\def RHX512_ROUND_COUNT
+* The number of Rijndael ming rounds used by RHX-512.
+*/
+#define RHX512_ROUND_COUNT 30
+
+/*!
+\def ROUNDKEY_ELEMENT_SIZE
+* The round key element size in bytes.
+*/
+#ifdef RHX_AESNI_ENABLED
+#	define ROUNDKEY_ELEMENT_SIZE 16
 #else
-#	define HBA256_MKEY_LENGTH 64
-#	define HBA512_MKEY_LENGTH 128
+#	define ROUNDKEY_ELEMENT_SIZE 4
+#	define RHX_PREFETCH_TABLES
 #endif
 
+/*!
+\def RHX_NONCE_SIZE
+* The size byte size of the CTR nonce and CBC initialization vector.
+*/
+#define RHX_NONCE_SIZE RHX_BLOCK_SIZE
+
+/*!
+\def AES128_ROUNDKEY_SIZE
+* The size of the AES-128 internal round-key array in bytes.
+* Use this macro to define the size of the round-key array in an rhx_state struct.
+*/
+#define AES128_ROUNDKEY_SIZE ((AES128_ROUND_COUNT + 1) * (RHX_BLOCK_SIZE / ROUNDKEY_ELEMENT_SIZE))
+
+/*!
+\def AES256_ROUNDKEY_SIZE
+* The size of the AES-256 internal round-key array in bytes.
+* Use this macro to define the size of the round-key array in an rhx_state struct.
+*/
+#define AES256_ROUNDKEY_SIZE ((AES256_ROUND_COUNT + 1) * (RHX_BLOCK_SIZE / ROUNDKEY_ELEMENT_SIZE))
+
+/*!
+\def RHX256_ROUNDKEY_SIZE
+* The size of the RHX-256 internal round-key array in bytes.
+* Use this macro to define the size of the round-key array in an rhx_state struct.
+*/
+#define RHX256_ROUNDKEY_SIZE ((RHX256_ROUND_COUNT + 1) * (RHX_BLOCK_SIZE / ROUNDKEY_ELEMENT_SIZE))
+
+/*!
+\def RHX512_ROUNDKEY_SIZE
+* The size of the RHX-512 internal round-key array in bytes.
+* Use this macro to define the size of the round-key array in an rhx_state struct.
+*/
+#define RHX512_ROUNDKEY_SIZE ((RHX512_ROUND_COUNT + 1) * (RHX_BLOCK_SIZE / ROUNDKEY_ELEMENT_SIZE))
+
+/*!
+\def RHX_INFO_DEFLEN
+* The size in bytes of the internal default information string.
+*/
+#define RHX_INFO_DEFLEN 9
+
+/* HBA */
+
+/*!
+\def HBA_INFO_LENGTH
+* The HBA version information array length.
+*/
+#define HBA_INFO_LENGTH 16
+
+/*!
+\def HBA256_MKEY_LENGTH
+* The size of the hba-rhx256 mac key array
+*/
+#define HBA256_MKEY_LENGTH 32
+
+/*!
+\def HBA512_MKEY_LENGTH
+* The size of the hba-rhx512 mac key array
+*/
+#define HBA512_MKEY_LENGTH 64
+
+/*!
+\def HBA_NAME_LENGTH
+* The HBA implementation specific name array length.
+*/
+#ifdef RHX_SHAKE_EXTENSION
+#	define HBA_NAME_LENGTH 29
+#else
+#	define HBA_NAME_LENGTH 32
+#endif
+
+
 /* default info parameter string literals */
-#ifdef RHX_CSHAKE_EXTENSION
+#ifdef RHX_SHAKE_EXTENSION
 /* RHXS256 */
 static const uint8_t RHX_CSHAKE256_INFO[7] = { 82, 72, 88, 83, 50, 53, 54 };
 /* RHXS512 */
@@ -134,7 +237,7 @@ static void secure_expand(rhx_state* state, rhx_keyparams* keyparams)
 		/* add the ciphers string literal name */
 		if (keyparams->keylen == RHX256_KEY_SIZE)
 		{
-#ifdef RHX_CSHAKE_EXTENSION
+#ifdef RHX_SHAKE_EXTENSION
 			/* RHXS256 */
 			memcpy(tmpi, RHX_CSHAKE256_INFO, sizeof(RHX_CSHAKE256_INFO));
 #else
@@ -144,7 +247,7 @@ static void secure_expand(rhx_state* state, rhx_keyparams* keyparams)
 		}
 		else
 		{
-#ifdef RHX_CSHAKE_EXTENSION
+#ifdef RHX_SHAKE_EXTENSION
 			/* RHXS512 */
 			memcpy(tmpi, RHX_CSHAKE512_INFO, sizeof(RHX_CSHAKE512_INFO));
 #else
@@ -164,7 +267,7 @@ static void secure_expand(rhx_state* state, rhx_keyparams* keyparams)
 			memcpy(tmpi + RHX_INFO_DEFLEN, keyparams->info, keyparams->infolen);
 		}
 
-#ifdef RHX_CSHAKE_EXTENSION
+#ifdef RHX_SHAKE_EXTENSION
 		if (keyparams->keylen == RHX256_KEY_SIZE)
 		{
 			uint8_t rk[(RHX256_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE)] = { 0 };
@@ -267,36 +370,77 @@ static void standard_expand(rhx_state* state, rhx_keyparams* keyparams)
 	}
 }
 
-void rhx_initialize(rhx_state* state, rhx_keyparams* keyparams, bool encryption)
+bool rhx_initialize(rhx_state* state, const rhx_keyparams* keyparams, bool encryption, cipher_type ctype)
 {
 	/* null or illegal state values */
 	assert(state->roundkeys != NULL);
 	assert(state->rndkeylen != 0);
+
+	__m128i* rkeys;
+	bool res;
+
+	res = false;
 
 	if (keyparams->nonce != NULL)
 	{
 		state->nonce = keyparams->nonce;
 	}
 
-	if (state->rndkeylen == RHX256_ROUNDKEY_SIZE)
+	if (ctype == RHX256)
 	{
-		memset(state->roundkeys, 0x00, RHX256_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE);
-		secure_expand(state, keyparams);
+		rkeys = (__m128i*)malloc(RHX256_ROUNDKEY_SIZE * sizeof(__m128i));
+
+		if (rkeys != NULL)
+		{
+			memset(rkeys, 0x00, RHX256_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE);
+			state->rndkeylen = RHX256_ROUNDKEY_SIZE;
+			state->roundkeys = rkeys;
+			state->rounds = 22;
+			secure_expand(state, keyparams);
+			res = true;
+		}
 	}
-	else if (state->rndkeylen == RHX512_ROUNDKEY_SIZE)
+	else if (ctype == RHX512)
 	{
-		memset(state->roundkeys, 0x00, RHX512_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE);
-		secure_expand(state, keyparams);
+		rkeys = (__m128i*)malloc(RHX512_ROUNDKEY_SIZE * sizeof(__m128i));
+
+		if (rkeys != NULL)
+		{
+			memset(rkeys, 0x00, RHX512_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE);
+			state->rndkeylen = RHX512_ROUNDKEY_SIZE;
+			state->roundkeys = rkeys;
+			state->rounds = 30;
+			secure_expand(state, keyparams);
+			res = true;
+		}
 	}
-	else if (state->rndkeylen == AES256_ROUNDKEY_SIZE)
+	else if (ctype == AES256)
 	{
-		memset(state->roundkeys, 0x00, AES256_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE);
-		standard_expand(state, keyparams);
+		rkeys = (__m128i*)malloc(AES256_ROUNDKEY_SIZE * sizeof(__m128i));
+
+		if (rkeys != NULL)
+		{
+			memset(rkeys, 0x00, AES256_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE);
+			state->rndkeylen = AES256_ROUNDKEY_SIZE;
+			state->roundkeys = rkeys;
+			state->rounds = 14;
+			standard_expand(state, keyparams);
+			res = true;
+		}
 	}
-	else if (state->rndkeylen == AES128_ROUNDKEY_SIZE)
+	else if (ctype == AES128)
 	{
-		memset(state->roundkeys, 0x00, AES128_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE);
-		standard_expand(state, keyparams);
+		rkeys = (__m128i*)malloc(AES128_ROUNDKEY_SIZE * sizeof(__m128i));
+
+		if (rkeys != NULL)
+		{
+			memset(rkeys, 0x00, AES128_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE);
+			state->rndkeylen = AES128_ROUNDKEY_SIZE;
+			state->roundkeys = rkeys;
+			state->rounds = 10;
+			standard_expand(state, keyparams);
+			res = true;
+		}
 	}
 	else
 	{
@@ -498,10 +642,10 @@ static void mix_columns(uint8_t* state)
 		t2 = s0 ^ s1 ^ (s2 << 1) ^ s3 ^ (s3 << 1);
 		t3 = s0 ^ (s0 << 1) ^ s1 ^ s2 ^ (s3 << 1);
 
-		state[i + 0] = t0 ^ ((~(t0 >> 8) + 1) & 0x0000011BUL);
-		state[i + 1] = t1 ^ ((~(t1 >> 8) + 1) & 0x0000011BUL);
-		state[i + 2] = t2 ^ ((~(t2 >> 8) + 1) & 0x0000011BUL);
-		state[i + 3] = t3 ^ ((~(t3 >> 8) + 1) & 0x0000011BUL);
+		state[i + 0] = (uint8_t)(t0 ^ ((~(t0 >> 8) + 1) & 0x0000011BUL));
+		state[i + 1] = (uint8_t)(t1 ^ ((~(t1 >> 8) + 1) & 0x0000011BUL));
+		state[i + 2] = (uint8_t)(t2 ^ ((~(t2 >> 8) + 1) & 0x0000011BUL));
+		state[i + 3] = (uint8_t)(t3 ^ ((~(t3 >> 8) + 1) & 0x0000011BUL));
 	}
 }
 
@@ -529,7 +673,7 @@ static void shift_rows(uint8_t* state)
 	state[3] = tmp;
 }
 
-static void sub_bytes(uint8_t* state, uint8_t* sbox)
+static void sub_bytes(uint8_t* state, const uint8_t* sbox)
 {
 	size_t i;
 
@@ -557,7 +701,7 @@ static uint32_t sub_word(uint32_t rot)
 
 static void decrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input)
 {
-	uint8_t* buf;
+	const uint8_t* buf;
 	uint8_t s[16];
 	size_t i;
 
@@ -658,7 +802,7 @@ static void prefetch_sbox(bool encryption)
 	}
 }
 
-static void secure_expand(rhx_state* state, rhx_keyparams* keyparams)
+static void secure_expand(rhx_state* state, const rhx_keyparams* keyparams)
 {
 	uint8_t* tmpi;
 	uint16_t kblen;
@@ -675,7 +819,7 @@ static void secure_expand(rhx_state* state, rhx_keyparams* keyparams)
 		/* add the ciphers string literal name */
 		if (keyparams->keylen == RHX256_KEY_SIZE)
 		{
-#ifdef RHX_CSHAKE_EXTENSION
+#ifdef RHX_SHAKE_EXTENSION
 			/* RHXS256 */
 			memcpy(tmpi, RHX_CSHAKE256_INFO, sizeof(RHX_CSHAKE256_INFO));
 #else
@@ -685,7 +829,7 @@ static void secure_expand(rhx_state* state, rhx_keyparams* keyparams)
 		}
 		else
 		{
-#ifdef RHX_CSHAKE_EXTENSION
+#ifdef RHX_SHAKE_EXTENSION
 			/* RHXS512 */
 			memcpy(tmpi, RHX_CSHAKE512_INFO, sizeof(RHX_CSHAKE512_INFO));
 #else
@@ -706,7 +850,7 @@ static void secure_expand(rhx_state* state, rhx_keyparams* keyparams)
 		}
 
 		/* seed the rng and generate the round key array */
-#ifdef RHX_CSHAKE_EXTENSION
+#ifdef RHX_SHAKE_EXTENSION
 		if (keyparams->keylen == RHX256_KEY_SIZE)
 		{
 			/* info is used as cSHAKE name parameter */
@@ -732,7 +876,7 @@ static void secure_expand(rhx_state* state, rhx_keyparams* keyparams)
 	}
 }
 
-static void standard_expand(rhx_state* state, rhx_keyparams* keyparams)
+static void standard_expand(rhx_state* state, const rhx_keyparams* keyparams)
 {
 	/* key in 32 bit words */
 	size_t kwords;
@@ -786,91 +930,112 @@ static void standard_expand(rhx_state* state, rhx_keyparams* keyparams)
 	}
 }
 
-void rhx_initialize(rhx_state* state, rhx_keyparams* keyparams, bool encryption)
+bool rhx_initialize(rhx_state* state, const rhx_keyparams* keyparams, bool encryption, cipher_type ctype)
 {
 	/* null or illegal state values */
 	assert(state->roundkeys != NULL);
 	assert(state->rndkeylen != 0);
+
+	uint32_t* rkeys;
+	bool res;
+
+	res = false;
 
 	if (keyparams->nonce != NULL)
 	{
 		state->nonce = keyparams->nonce;
 	}
 
-	if (state->rndkeylen == RHX256_ROUNDKEY_SIZE)
+	if (ctype == RHX256)
 	{
-		memset(state->roundkeys, 0x00, RHX256_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE);
-		state->rounds = 22;
-		secure_expand(state, keyparams);
+		rkeys = (uint32_t*)malloc(RHX256_ROUNDKEY_SIZE * sizeof(uint32_t));
+
+		if (rkeys != NULL)
+		{
+			memset(rkeys, 0x00, RHX256_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE);
+			state->rndkeylen = RHX256_ROUNDKEY_SIZE;
+			state->roundkeys = rkeys;
+			state->rounds = 22;
+			secure_expand(state, keyparams);
+			res = true;
+		}
 	}
-	else if (state->rndkeylen == RHX512_ROUNDKEY_SIZE)
+	else if (ctype == RHX512)
 	{
-		state->rounds = 30;
-		memset(state->roundkeys, 0x00, RHX512_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE);
-		secure_expand(state, keyparams);
+		rkeys = (uint32_t*)malloc(RHX512_ROUNDKEY_SIZE * sizeof(uint32_t));
+
+		if (rkeys != NULL)
+		{
+			memset(rkeys, 0x00, RHX512_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE);
+			state->rndkeylen = RHX512_ROUNDKEY_SIZE;
+			state->roundkeys = rkeys;
+			state->rounds = 30;
+			secure_expand(state, keyparams);
+			res = true;
+		}
 	}
-	else if (state->rndkeylen == AES256_ROUNDKEY_SIZE)
+	else if (ctype == AES256)
 	{
-		state->rounds = 14;
-		memset(state->roundkeys, 0x00, AES256_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE);
-		standard_expand(state, keyparams);
+		rkeys = (uint32_t*)malloc(AES256_ROUNDKEY_SIZE * sizeof(uint32_t));
+
+		if (rkeys != NULL)
+		{
+			memset(rkeys, 0x00, AES256_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE);
+			state->rndkeylen = AES256_ROUNDKEY_SIZE;
+			state->roundkeys = rkeys;
+			state->rounds = 14;
+			standard_expand(state, keyparams);
+			res = true;
+		}
 	}
-	else if (state->rndkeylen == AES128_ROUNDKEY_SIZE)
+	else if (ctype == AES128)
 	{
-		state->rounds = 10;
-		memset(state->roundkeys, 0x00, AES128_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE);
-		standard_expand(state, keyparams);
+		rkeys = (uint32_t*)malloc(AES128_ROUNDKEY_SIZE * sizeof(uint32_t));
+
+		if (rkeys != NULL)
+		{
+			memset(rkeys, 0x00, AES128_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE);
+			state->rndkeylen = AES128_ROUNDKEY_SIZE;
+			state->roundkeys = rkeys;
+			state->rounds = 10;
+			standard_expand(state, keyparams);
+			res = true;
+		}
 	}
 	else
 	{
 		state->rounds = 0;
+		state->roundkeys = NULL;
 		state->rndkeylen = 0;
 	}
-#ifdef RHX_RIJNDAEL_TABLES
-#ifdef RHX_PREFETCH_TABLES
-	prefetch_sbox(encryption);
-#endif
 
-	/* reverse array for inverse cipher */
-	if (encryption == false)
-	{
-		uint32_t tmpk;
-		size_t i;
-		size_t j;
-		size_t k;
-
-		/* reverse key */
-		for (i = 0, k = state->rndkeylen - 4; i < k; i += 4, k -= 4)
-		{
-			for (j = 0; j < 4; j++)
-			{
-				tmpk = state->roundkeys[i + j];
-				state->roundkeys[i + j] = state->roundkeys[k + j];
-				state->roundkeys[k + j] = tmpk;
-			}
-		}
-
-		/* sbox inversion */
-		for (i = 4; i < state->rndkeylen - 4; i++)
-		{
-			state->roundkeys[i] = it_0[s_box[(state->roundkeys[i] >> 24)]] ^
-				it_1[s_box[(uint8_t)(state->roundkeys[i] >> 16)]] ^
-				it_2[s_box[(uint8_t)(state->roundkeys[i] >> 8)]] ^
-				it_3[s_box[(uint8_t)(state->roundkeys[i])]];
-		}
-	}
-#endif
+	return res;
 }
 
 #endif
 
-/* cbc long-form */
+void rhx_dispose(rhx_state* state)
+{
+	/* erase the state members */
 
-void cbc_decrypt(rhx_state* state, const rhx_keyparams* keyparams, uint8_t* output, const uint8_t* input, size_t inputlen)
+	if (state != NULL);
+	{
+		if (state->roundkeys != NULL)
+		{
+			memset(state->roundkeys, 0x00, state->rndkeylen * ROUNDKEY_ELEMENT_SIZE);
+			free(state->roundkeys);
+			state->roundkeys = NULL;
+		}
+
+		state->rndkeylen = 0;
+	}
+}
+
+/* cbc mode */
+
+void rhx_cbc_decrypt(rhx_state* state, uint8_t* output, const uint8_t* input, size_t inputlen)
 {
 	assert(state != NULL);
-	assert(keyparams->key != NULL);
-	assert(keyparams->nonce != NULL);
 	assert(input != NULL);
 	assert(output != NULL);
 
@@ -883,33 +1048,30 @@ void cbc_decrypt(rhx_state* state, const rhx_keyparams* keyparams, uint8_t* outp
 
 	while (inputlen > RHX_BLOCK_SIZE)
 	{
-		cbc_decrypt_block(state, output + oftb, input + oftb);
+		rhx_cbc_decrypt_block(state, output + oftb, input + oftb);
 		inputlen -= RHX_BLOCK_SIZE;
 		oftb += RHX_BLOCK_SIZE;
 	}
 
-	cbc_decrypt_block(state, tmpb, input + oftb);
+	rhx_cbc_decrypt_block(state, tmpb, input + oftb);
 	nlen = pkcs7_padding_length(tmpb, 0, RHX_BLOCK_SIZE);
 	memcpy(output + oftb, tmpb, RHX_BLOCK_SIZE - nlen);
 }
 
-void cbc_encrypt(rhx_state* state, const rhx_keyparams* keyparams, uint8_t* output, const uint8_t* input, size_t inputlen)
+void rhx_cbc_encrypt(rhx_state* state, uint8_t* output, const uint8_t* input, size_t inputlen)
 {
 	assert(state != NULL);
-	assert(keyparams->key != NULL);
-	assert(keyparams->nonce != NULL);
 	assert(input != NULL);
 	assert(output != NULL);
 
 	uint8_t tmpb[RHX_BLOCK_SIZE] = { 0 };
 	size_t oftb;
 
-	rhx_initialize(state, keyparams, true);
 	oftb = 0;
 
 	while (inputlen > RHX_BLOCK_SIZE)
 	{
-		cbc_encrypt_block(state, output + oftb, input + oftb);
+		rhx_cbc_encrypt_block(state, output + oftb, input + oftb);
 		inputlen -= RHX_BLOCK_SIZE;
 		oftb += RHX_BLOCK_SIZE;
 	}
@@ -923,11 +1085,11 @@ void cbc_encrypt(rhx_state* state, const rhx_keyparams* keyparams, uint8_t* outp
 			pkcs7_add_padding(tmpb, inputlen, RHX_BLOCK_SIZE - inputlen);
 		}
 
-		cbc_encrypt_block(state, output + oftb, tmpb);
+		rhx_cbc_encrypt_block(state, output + oftb, tmpb);
 	}
 }
 
-void cbc_decrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input)
+void rhx_cbc_decrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input)
 {
 	assert(state != NULL);
 	assert(input != NULL);
@@ -947,7 +1109,7 @@ void cbc_decrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input)
 	memcpy(state->nonce, tmpv, RHX_BLOCK_SIZE);
 }
 
-void cbc_encrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input)
+void rhx_cbc_encrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input)
 {
 	assert(state != NULL);
 	assert(input != NULL);
@@ -962,708 +1124,6 @@ void cbc_encrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input)
 
 	encrypt_block(state, output, state->nonce);
 	memcpy(state->nonce, output, RHX_BLOCK_SIZE);
-}
-
-/* cbc simplified */
-
-void aes128_cbc_decrypt(const rhx_keyparams* keyparams, uint8_t* output, const uint8_t* input, size_t inputlen)
-{
-	assert(keyparams->key != NULL);
-	assert(keyparams->nonce != NULL);
-	assert(input != NULL);
-	assert(output != NULL);
-
-	/* initialize the state round-key array */
-#if defined(RHX_AESNI_ENABLED)
-	__m128i rkeys[AES128_ROUNDKEY_SIZE] = { 0 };
-#else
-	uint32_t rkeys[AES128_ROUNDKEY_SIZE] = { 0 };
-#endif
-
-	/* initialize the state and set the round-key array size */
-	rhx_state state = { rkeys, AES128_ROUNDKEY_SIZE };
-
-	rhx_initialize(&state, keyparams, false);
-	cbc_decrypt(&state, keyparams, output, input, inputlen);
-}
-
-void aes256_cbc_decrypt(const rhx_keyparams* keyparams, uint8_t* output, const uint8_t* input, size_t inputlen)
-{
-	assert(keyparams->key != NULL);
-	assert(keyparams->nonce != NULL);
-	assert(input != NULL);
-	assert(output != NULL);
-
-	/* initialize the state round-key array */
-#if defined(RHX_AESNI_ENABLED)
-	__m128i rkeys[AES256_ROUNDKEY_SIZE] = { 0 };
-#else
-	uint32_t rkeys[AES256_ROUNDKEY_SIZE] = { 0 };
-#endif
-
-	/* initialize the state and set the round-key array size */
-	rhx_state state = { rkeys, AES256_ROUNDKEY_SIZE };
-
-	rhx_initialize(&state, keyparams, false);
-	cbc_decrypt(&state, keyparams, output, input, inputlen);
-}
-
-void rhx256_cbc_decrypt(const rhx_keyparams* keyparams, uint8_t* output, const uint8_t* input, size_t inputlen)
-{
-	assert(keyparams->key != NULL);
-	assert(keyparams->nonce != NULL);
-	assert(input != NULL);
-	assert(output != NULL);
-
-	/* initialize the state round-key array */
-#if defined(RHX_AESNI_ENABLED)
-	__m128i rkeys[RHX256_ROUNDKEY_SIZE] = { 0 };
-#else
-	uint32_t rkeys[RHX256_ROUNDKEY_SIZE] = { 0 };
-#endif
-
-	/* initialize the state and set the round-key array size */
-	rhx_state state = { rkeys, RHX256_ROUNDKEY_SIZE };
-
-	rhx_initialize(&state, keyparams, false);
-	cbc_decrypt(&state, keyparams, output, input, inputlen);
-}
-
-void rhx512_cbc_decrypt(const rhx_keyparams* keyparams, uint8_t* output, const uint8_t* input, size_t inputlen)
-{
-	assert(keyparams->key != NULL);
-	assert(keyparams->nonce != NULL);
-	assert(input != NULL);
-	assert(output != NULL);
-
-	/* initialize the state round-key array */
-#if defined(RHX_AESNI_ENABLED)
-	__m128i rkeys[RHX512_ROUNDKEY_SIZE] = { 0 };
-#else
-	uint32_t rkeys[RHX512_ROUNDKEY_SIZE] = { 0 };
-#endif
-
-	/* initialize the state and set the round-key array size */
-	rhx_state state = { rkeys, RHX512_ROUNDKEY_SIZE };
-
-	rhx_initialize(&state, keyparams, false);
-	cbc_decrypt(&state, keyparams, output, input, inputlen);
-}
-
-void aes128_cbc_encrypt(const rhx_keyparams* keyparams, uint8_t* output, const uint8_t* input, size_t inputlen)
-{
-	assert(keyparams->key != NULL);
-	assert(keyparams->nonce != NULL);
-	assert(input != NULL);
-	assert(output != NULL);
-
-	/* initialize the state round-key array */
-#if defined(RHX_AESNI_ENABLED)
-	__m128i rkeys[AES128_ROUNDKEY_SIZE] = { 0 };
-#else
-	uint32_t rkeys[AES128_ROUNDKEY_SIZE] = { 0 };
-#endif
-
-	/* initialize the state and set the round-key array size */
-	rhx_state state = { rkeys, AES128_ROUNDKEY_SIZE, AES128_ROUND_COUNT };
-
-	rhx_initialize(&state, keyparams, true);
-	cbc_encrypt(&state, keyparams, output, input, inputlen);
-}
-
-void aes256_cbc_encrypt(const rhx_keyparams* keyparams, uint8_t* output, const uint8_t* input, size_t inputlen)
-{
-	assert(keyparams->key != NULL);
-	assert(keyparams->nonce != NULL);
-	assert(input != NULL);
-	assert(output != NULL);
-
-	/* initialize the state round-key array */
-#if defined(RHX_AESNI_ENABLED)
-	__m128i rkeys[AES256_ROUNDKEY_SIZE] = { 0 };
-#else
-	uint32_t rkeys[AES256_ROUNDKEY_SIZE] = { 0 };
-#endif
-
-	/* initialize the state and set the round-key array size */
-	rhx_state state = { rkeys, AES256_ROUNDKEY_SIZE };
-
-	rhx_initialize(&state, keyparams, true);
-	cbc_encrypt(&state, keyparams, output, input, inputlen);
-}
-
-void rhx256_cbc_encrypt(const rhx_keyparams* keyparams, uint8_t* output, const uint8_t* input, size_t inputlen)
-{
-	assert(keyparams->key != NULL);
-	assert(keyparams->nonce != NULL);
-	assert(input != NULL);
-	assert(output != NULL);
-
-	/* initialize the state round-key array */
-#if defined(RHX_AESNI_ENABLED)
-	__m128i rkeys[RHX256_ROUNDKEY_SIZE] = { 0 };
-#else
-	uint32_t rkeys[RHX256_ROUNDKEY_SIZE] = { 0 };
-#endif
-
-	/* initialize the state and set the round-key array size */
-	rhx_state state = { rkeys, RHX256_ROUNDKEY_SIZE };
-
-	rhx_initialize(&state, keyparams, true);
-	cbc_encrypt(&state, keyparams, output, input, inputlen);
-}
-
-void rhx512_cbc_encrypt(const rhx_keyparams* keyparams, uint8_t* output, const uint8_t* input, size_t inputlen)
-{
-	assert(keyparams->key != NULL);
-	assert(keyparams->nonce != NULL);
-	assert(input != NULL);
-	assert(output != NULL);
-
-	/* initialize the state round-key array */
-#if defined(RHX_AESNI_ENABLED)
-	__m128i rkeys[RHX512_ROUNDKEY_SIZE] = { 0 };
-#else
-	uint32_t rkeys[RHX512_ROUNDKEY_SIZE] = { 0 };
-#endif
-
-	/* initialize the state and set the round-key array size */
-	rhx_state state = { rkeys, RHX512_ROUNDKEY_SIZE };
-
-	rhx_initialize(&state, keyparams, true);
-	cbc_encrypt(&state, keyparams, output, input, inputlen);
-}
-
-void rhx_dispose(rhx_state* state)
-{
-	/* check for null state */
-	assert(state != NULL);
-
-	memset(state->roundkeys, 0x00, state->rndkeylen * ROUNDKEY_ELEMENT_SIZE);
-	state->roundkeys = NULL;
-	state->rndkeylen = 0;
-}
-
-/* Block-cipher counter mode with hash based authentication (HBA) AEAD authenticated mode */
-
-static const uint8_t hba_version_info[HBA_INFO_LENGTH] =
-{
-	0x48, 0x42, 0x41, 0x20, 0x76, 0x65, 0x72, 0x73, 0x69, 0x6F, 0x6E, 0x20, 0x31, 0x2E, 0x30, 0x61
-};
-
-static bool hba_rhx256_initialize(const hba_keyparams* keyparams, uint8_t* cprk, uint8_t* mack)
-{
-#ifdef HBA_KMAC_AUTH
-	const uint8_t rhx256_hba_name[HBA_NAME_LENGTH] =
-	{
-		0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x48, 0x42, 0x41, 0x2D, 0x52, 0x48, 
-		0x58, 0x53, 0x32, 0x35, 0x36, 0x2D, 0x4B, 0x4D, 0x41, 0x43, 0x32, 0x35, 0x36
-	};
-#else
-	const uint8_t rhx256_hba_name[HBA_NAME_LENGTH] =
-	{
-		0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x48, 0x42, 0x41, 0x2D, 0x52, 0x48, 
-		0x58, 0x48, 0x32, 0x35, 0x36, 0x2D, 0x48, 0x4D, 0x41, 0x43, 0x53, 0x48, 0x41, 0x32, 0x35, 0x36
-	};
-#endif
-
-	shake_state shks;
-	uint8_t sbuf[KMAC_256_RATE] = { 0 };
-	uint8_t* cust;
-	const size_t CLEN = sizeof(hba_version_info) + keyparams->infolen;
-
-	cust = (uint8_t*)malloc(CLEN);
-
-	if (cust != NULL)
-	{
-		memset(cust, 0x00, CLEN);
-		clear64(shks.state, SHAKE_STATE_SIZE);
-
-		/* copy hba info to the cSHAKE customization string */
-		memcpy(cust, hba_version_info, HBA_INFO_LENGTH);
-
-		/* copy the user info to custom */
-		if (keyparams->infolen != 0)
-		{
-			memcpy(cust + sizeof(hba_version_info), keyparams->info, keyparams->infolen);
-		}
-
-		/* initialize an instance of cSHAKE */
-		cshake256_initialize(&shks, keyparams->key, keyparams->keylen, rhx256_hba_name, HBA_NAME_LENGTH, cust, CLEN);
-		free(cust);
-
-		/* use two permutation calls to seperate the cipher/mac key outputs to match the CEX implementation */
-		cshake256_squeezeblocks(&shks, sbuf, 1);
-		memcpy(cprk, sbuf, keyparams->keylen);
-		cshake256_squeezeblocks(&shks, sbuf, 1);
-		memcpy(mack, sbuf, HBA256_MKEY_LENGTH);
-		/* clear the shake buffer */
-		clear64(shks.state, SHAKE_STATE_SIZE);
-	}
-}
-
-static bool hba_rhx512_initialize(const hba_keyparams* keyparams, uint8_t* cprk, uint8_t* mack)
-{
-#ifdef HBA_KMAC_AUTH
-	static const uint8_t rhx512_hba_name[HBA_NAME_LENGTH] =
-	{
-		0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x48, 0x42, 0x41, 0x2D, 0x52, 0x48, 
-		0x58, 0x53, 0x35, 0x31, 0x32, 0x2D, 0x4B, 0x4D, 0x41, 0x43, 0x35, 0x31, 0x32
-	};
-#else
-	static const uint8_t rhx512_hba_name[HBA_NAME_LENGTH] =
-	{
-		0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x48, 0x42, 0x41, 0x2D, 0x52, 0x48,
-		0x58, 0x48, 0x35, 0x31, 0x32, 0x2D, 0x48, 0x4D, 0x41, 0x43, 0x53, 0x48, 0x41, 0x35, 0x31, 0x32
-	};
-#endif
-
-	shake_state shks;
-#if defined RHX_CSHAKE_EXTENSION
-	uint8_t sbuf[KMAC_512_RATE] = { 0 };
-#else
-	uint8_t sbuf[KMAC_512_RATE * 2] = { 0 };
-#endif
-	uint8_t* cust;
-	const size_t CLEN = sizeof(hba_version_info) + keyparams->infolen;
-
-	cust = (uint8_t*)malloc(CLEN);
-
-	if (cust != NULL)
-	{
-		memset(cust, 0x00, CLEN);
-		clear64(shks.state, SHAKE_STATE_SIZE);
-
-		/* copy hba info to the cSHAKE customization string */
-		memcpy(cust, hba_version_info, HBA_INFO_LENGTH);
-
-		/* copy the user info to custom */
-		if (keyparams->infolen != 0)
-		{
-			memcpy(cust + sizeof(hba_version_info), keyparams->info, keyparams->infolen);
-		}
-
-		/* initialize an instance of cSHAKE */
-		cshake512_initialize(&shks, keyparams->key, keyparams->keylen, rhx512_hba_name, HBA_NAME_LENGTH, cust, CLEN);
-		free(cust);
-		/* use two permutation calls to seperate the cipher/mac key outputs to match the CEX implementation */
-
-		cshake512_squeezeblocks(&shks, sbuf, 1);
-		memcpy(cprk, sbuf, keyparams->keylen);
-#if defined RHX_CSHAKE_EXTENSION
-		cshake512_squeezeblocks(&shks, sbuf, 1);
-		memcpy(mack, sbuf, HBA512_MKEY_LENGTH);
-#else
-		cshake512_squeezeblocks(&shks, sbuf, 2);
-		memcpy(mack, sbuf, HBA512_MKEY_LENGTH);
-#endif
-		/* clear the shake buffer */
-		clear64(shks.state, SHAKE_STATE_SIZE);
-	}
-}
-
-bool hba_rhx256_decrypt(const hba_keyparams* keyparams, uint8_t* output, const uint8_t* input, size_t inputlen)
-{
-	assert(keyparams->key != NULL);
-	assert(keyparams->nonce != NULL);
-	assert(input != NULL);
-	assert(output != NULL);
-
-	uint8_t code[HBA256_MAC_LENGTH] = { 0 };
-	uint8_t cprk[RHX256_KEY_SIZE] = { 0 };
-	uint8_t mack[HBA256_MKEY_LENGTH] = { 0 };
-	uint8_t* minp;
-	uint64_t mctr;
-	const size_t TLEN = RHX_BLOCK_SIZE + inputlen + keyparams->aadlen + sizeof(uint64_t);
-	bool res;
-
-	res = false;
-
-	/* allocate the mac input array */
-	minp = (uint8_t*)malloc(TLEN);
-	
-	if (minp != NULL)
-	{
-		/* initialize the rhx-256 cipher instance */
-		hba_rhx256_initialize(keyparams, cprk, mack);
-
-		/* copy the cipher nonce, ciphertext, aad, and mac counter to the input array */
-		memcpy(minp, keyparams->nonce, RHX_BLOCK_SIZE);
-
-		if (inputlen != 0)
-		{
-			memcpy(minp + RHX_BLOCK_SIZE, input, inputlen);
-		}
-
-		if (inputlen != keyparams->aadlen)
-		{
-			memcpy(minp + RHX_BLOCK_SIZE + inputlen, keyparams->aad, keyparams->aadlen);
-		}
-
-		/* append the total number of processed bytes + 1, to the end of the mac input array */
-		mctr = 0x00000001ULL + RHX_BLOCK_SIZE + inputlen + keyparams->aadlen;
-		le64to8(minp + RHX_BLOCK_SIZE + inputlen + keyparams->aadlen, mctr);
-
-#ifdef HBA_KMAC_AUTH
-		/* mac the data and generate the mac code */
-		kmac256(code, KMAC_256_MAC, minp, TLEN, mack, sizeof(mack), NULL, 0);
-#else
-		/* mac the data and generate the mac code */
-		hmac256_compute(code, minp, TLEN, mack, sizeof(mack));
-#endif
-
-		free(minp);
-
-		/* constant-time comparison of the newly generated mac code with the one appended to the cipher-text array */
-		res = verify(code, input + inputlen, KMAC_256_MAC) == 0;
-
-		/* only decrypt if the cipher-text mac-code matches */
-		if (res == true)
-		{
-			rhx_keyparams kp = { cprk, sizeof(cprk), keyparams->nonce, keyparams->info, keyparams->infolen };
-			rhx256_ctr_transform(&kp, output, input, inputlen);
-		}
-	}
-
-	return res;
-}
-
-bool hba_rhx256_encrypt(const hba_keyparams* keyparams, uint8_t* output, const uint8_t* input, size_t inputlen)
-{
-	assert(keyparams->key != NULL);
-	assert(keyparams->nonce != NULL);
-	assert(input != NULL);
-	assert(output != NULL);
-
-	uint8_t cprk[RHX256_KEY_SIZE] = { 0 };
-	uint8_t mack[HBA256_MKEY_LENGTH] = { 0 };
-	uint8_t* minp;
-	uint64_t mctr;
-	const size_t TLEN = RHX_BLOCK_SIZE + inputlen + keyparams->aadlen + sizeof(uint64_t);
-	bool res;
-
-	res = false;
-
-	/* allocate the input array */
-	minp = (uint8_t*)malloc(TLEN);
-
-	if (minp != NULL)
-	{
-		clear8(minp, TLEN);
-
-		/* initialize the hba cipher and mac keys */
-		hba_rhx256_initialize(keyparams, cprk, mack);
-
-		/* copy the starting position of the nonce to the mac buffer array */
-		memcpy(minp, keyparams->nonce, RHX_BLOCK_SIZE);
-
-		/* key the rhx-256 counter mode, and encrypt the array */
-		rhx_keyparams kp = { cprk, sizeof(cprk), keyparams->nonce, keyparams->info, keyparams->infolen };
-		rhx256_ctr_transform(&kp, output, input, inputlen);
-
-		/* copy the ciphertext, aad, and mac counter to the buffer array */
-		if (inputlen != 0)
-		{
-			memcpy(minp + RHX_BLOCK_SIZE, output, inputlen);
-		}
-
-		if (keyparams->aadlen != 0)
-		{
-			memcpy(minp + RHX_BLOCK_SIZE + inputlen, keyparams->aad, keyparams->aadlen);
-		}
-
-		/* add 1 + the nonce, input, and aad sizes to the counter */
-		mctr = 0x00000001ULL + RHX_BLOCK_SIZE + inputlen + keyparams->aadlen;
-		/* append the counter to the end of the mac input array */
-		le64to8(minp + RHX_BLOCK_SIZE + inputlen + keyparams->aadlen, mctr);
-
-
-#ifdef HBA_KMAC_AUTH
-		/* mac the data and add the code to the end of the cipher-text output array */
-		kmac256(output + inputlen, KMAC_256_MAC, minp, TLEN, mack, sizeof(mack), NULL, 0);
-#else
-		/* mac the data and add the code to the end of the cipher-text output array */
-		hmac256_compute(output + inputlen, minp, TLEN, mack, sizeof(mack));
-#endif
-
-		clear8(minp, TLEN);
-		free(minp);
-		res = true;
-	}
-
-	return res;
-}
-
-bool hba_rhx512_decrypt(const hba_keyparams* keyparams, uint8_t* output, const uint8_t* input, size_t inputlen)
-{
-	assert(keyparams->key != NULL);
-	assert(keyparams->nonce != NULL);
-	assert(input != NULL);
-	assert(output != NULL);
-
-	uint8_t code[HBA512_MAC_LENGTH] = { 0 };
-	uint8_t cprk[RHX512_KEY_SIZE] = { 0 };
-	uint8_t mack[HBA512_MKEY_LENGTH] = { 0 };
-	uint8_t* minp;
-	uint64_t mctr;
-	const size_t TLEN = RHX_BLOCK_SIZE + inputlen + keyparams->aadlen + sizeof(uint64_t);
-	bool res;
-
-	res = false;
-
-	/* allocate the mac input array */
-	minp = (uint8_t*)malloc(TLEN);
-
-	if (minp != NULL)
-	{
-		/* initialize the rhx-512 cipher instance */
-		hba_rhx512_initialize(keyparams, cprk, mack);
-
-		/* copy the cipher nonce, aad, ciphertext, and mac counter to the input array */
-		memcpy(minp, keyparams->nonce, RHX_BLOCK_SIZE);
-		memcpy(minp + RHX_BLOCK_SIZE, input, inputlen);
-		memcpy(minp + RHX_BLOCK_SIZE + inputlen, keyparams->aad, keyparams->aadlen);
-
-		/* append the total number of processed bytes + 1, to the end of the mac input array */
-		mctr = 0x00000001ULL + RHX_BLOCK_SIZE + inputlen + keyparams->aadlen;
-		le64to8(minp + RHX_BLOCK_SIZE + inputlen + keyparams->aadlen, mctr);
-
-#ifdef HBA_KMAC_AUTH
-		/* mac the data and add the code to the end of the cipher-text output array */
-		kmac512(code, KMAC_512_MAC, minp, TLEN, mack, sizeof(mack), NULL, 0);
-#else
-		/* mac the data and add the code to the end of the cipher-text output array */
-		hmac512_compute(code, minp, TLEN, mack, sizeof(mack));
-#endif
-
-		free(minp);
-
-		/* constant-time comparison of the newly generated mac code with the one appended to the cipher-text array */
-		res = verify(code, input + inputlen, KMAC_512_MAC) == 0;
-
-		/* only decrypt if the cipher-text mac-code matches */
-		if (res == true)
-		{
-			rhx_keyparams kp = { cprk, sizeof(cprk), keyparams->nonce, keyparams->info, keyparams->infolen };
-			rhx512_ctr_transform(&kp, output, input, inputlen);
-		}
-	}
-
-	return res;
-}
-
-bool hba_rhx512_encrypt(const hba_keyparams* keyparams, uint8_t* output, const uint8_t* input, size_t inputlen)
-{
-	assert(keyparams->key != NULL);
-	assert(keyparams->nonce != NULL);
-	assert(input != NULL);
-	assert(output != NULL);
-
-	uint8_t cprk[RHX512_KEY_SIZE] = { 0 };
-	uint8_t mack[HBA512_MKEY_LENGTH] = { 0 };
-	uint8_t* minp;
-	uint64_t mctr;
-	const size_t TLEN = RHX_BLOCK_SIZE + inputlen + keyparams->aadlen + sizeof(uint64_t);
-	bool res;
-
-	res = false;
-
-	/* allocate the input array */
-	minp = (uint8_t*)malloc(TLEN);
-
-	if (minp != NULL)
-	{
-		clear8(minp, TLEN);
-
-		/* initialize the hba cipher and mac keys */
-		hba_rhx512_initialize(keyparams, cprk, mack);
-
-		/* copy the starting position of the nonce to the mac buffer array */
-		memcpy(minp, keyparams->nonce, RHX_BLOCK_SIZE);
-
-		/* key the rhx-512 counter mode, and encrypt the array */
-		rhx_keyparams kp = { cprk, sizeof(cprk), keyparams->nonce, keyparams->info, keyparams->infolen };
-		rhx512_ctr_transform(&kp, output, input, inputlen);
-
-		/* copy the ciphertext, aad, and mac counter to the buffer array */
-		if (inputlen != 0)
-		{
-			memcpy(minp + RHX_BLOCK_SIZE, output, inputlen);
-		}
-
-		if (keyparams->aadlen != 0)
-		{
-			memcpy(minp + RHX_BLOCK_SIZE + inputlen, keyparams->aad, keyparams->aadlen);
-		}
-
-		/* add 1 + the nonce, input, and aad sizes to the counter */
-		mctr = 0x00000001ULL + RHX_BLOCK_SIZE + inputlen + keyparams->aadlen;
-		/* append the counter to the end of the mac input array */
-		le64to8(minp + RHX_BLOCK_SIZE + inputlen + keyparams->aadlen, mctr);
-
-#ifdef HBA_KMAC_AUTH
-		/* mac the data and add the code to the end of the cipher-text output array */
-		kmac512(output + inputlen, KMAC_512_MAC, minp, TLEN, mack, sizeof(mack), NULL, 0);
-#else
-		/* mac the data and add the code to the end of the cipher-text output array */
-		hmac512_compute(output + inputlen, minp, TLEN, mack, sizeof(mack));
-#endif
-
-		clear8(minp, TLEN);
-		free(minp);
-		res = true;
-	}
-
-	return res;
-}
-
-/* ctr long-form */
-
-void ctr_transform(rhx_state* state, uint8_t* output, const uint8_t* input, size_t inputlen)
-{
-	assert(state != NULL);
-	assert(input != NULL);
-	assert(output != NULL);
-
-	size_t i;
-	size_t poff;
-
-	poff = 0;
-
-	while (inputlen >= RHX_BLOCK_SIZE)
-	{
-		encrypt_block(state, output + poff, state->nonce);
-
-		for (i = 0; i < RHX_BLOCK_SIZE; ++i)
-		{
-			output[poff + i] ^= input[poff + i];
-		}
-
-		be8increment(state->nonce, RHX_BLOCK_SIZE);
-
-		inputlen -= RHX_BLOCK_SIZE;
-		poff += RHX_BLOCK_SIZE;
-	}
-
-	if (inputlen != 0)
-	{
-		uint8_t tmpb[RHX_BLOCK_SIZE] = { 0 };
-
-		encrypt_block(state, tmpb, state->nonce);
-
-		for (i = 0; i < inputlen; ++i)
-		{
-			output[poff + i] = tmpb[i] ^ input[poff + i];
-		}
-
-		be8increment(state->nonce, RHX_BLOCK_SIZE);
-	}
-}
-
-/* ctr simplified */
-
-void aes128_ctr_transform(const rhx_keyparams* keyparams, uint8_t* output, const uint8_t* input, size_t inputlen)
-{
-	assert(keyparams->key != NULL);
-	assert(keyparams->nonce != NULL);
-	assert(input != NULL);
-	assert(output != NULL);
-
-	/* initialize the state round-key array */
-#if defined(RHX_AESNI_ENABLED)
-	__m128i rkeys[AES128_ROUNDKEY_SIZE] = { 0 };
-#else
-	uint32_t rkeys[AES128_ROUNDKEY_SIZE] = { 0 };
-#endif
-
-	/* initialize the state and set the round-key array size */
-	rhx_state state = { rkeys, AES128_ROUNDKEY_SIZE  };
-
-	rhx_initialize(&state, keyparams, true);
-	ctr_transform(&state, keyparams, output, input, inputlen);
-}
-
-void aes256_ctr_transform(const rhx_keyparams* keyparams, uint8_t* output, const uint8_t* input, size_t inputlen)
-{
-	assert(keyparams->key != NULL);
-	assert(keyparams->nonce != NULL);
-	assert(input != NULL);
-	assert(output != NULL);
-
-	/* initialize the state round-key array */
-#if defined(RHX_AESNI_ENABLED)
-	__m128i rkeys[AES256_ROUNDKEY_SIZE] = { 0 };
-#else
-	uint32_t rkeys[AES256_ROUNDKEY_SIZE] = { 0 };
-#endif
-
-	/* initialize the state and set the round-key array size */
-	rhx_state state = { rkeys, AES256_ROUNDKEY_SIZE };
-
-	rhx_initialize(&state, keyparams, true);
-	ctr_transform(&state, keyparams, output, input, inputlen);
-}
-
-void rhx256_ctr_transform(const rhx_keyparams* keyparams, uint8_t* output, const uint8_t* input, size_t inputlen)
-{
-	assert(keyparams->key != NULL);
-	assert(keyparams->nonce != NULL);
-	assert(input != NULL);
-	assert(output != NULL);
-
-	/* initialize the state round-key array */
-#if defined(RHX_AESNI_ENABLED)
-	__m128i rkeys[RHX256_ROUNDKEY_SIZE] = { 0 };
-#else
-	uint32_t rkeys[RHX256_ROUNDKEY_SIZE] = { 0 };
-#endif
-
-	/* initialize the state and set the round-key array size */
-	rhx_state state = { rkeys, RHX256_ROUNDKEY_SIZE };
-
-	rhx_initialize(&state, keyparams, true);
-	ctr_transform(&state, output, input, inputlen);
-}
-
-void rhx512_ctr_transform(const rhx_keyparams* keyparams, uint8_t* output, const uint8_t* input, size_t inputlen)
-{
-	assert(keyparams->key != NULL);
-	assert(keyparams->nonce != NULL);
-	assert(input != NULL);
-	assert(output != NULL);
-
-	/* initialize the state round-key array */
-#if defined(RHX_AESNI_ENABLED)
-	__m128i rkeys[RHX512_ROUNDKEY_SIZE] = { 0 };
-#else
-	uint32_t rkeys[RHX512_ROUNDKEY_SIZE] = { 0 };
-#endif
-
-	/* initialize the state and set the round-key array size */
-	rhx_state state = { rkeys, RHX512_ROUNDKEY_SIZE };
-
-	rhx_initialize(&state, keyparams, true);
-	ctr_transform(&state, output, input, inputlen);
-}
-
-/* ecb long-form only */
-
-void rhx_ecb_decrypt(rhx_state* state, uint8_t* output, const uint8_t* input)
-{
-	assert(state != NULL);
-	assert(input != NULL);
-	assert(output != NULL);
-
-	decrypt_block(state, output, input);
-}
-
-void rhx_ecb_encrypt(rhx_state* state, uint8_t* output, const uint8_t* input)
-{
-	assert(state != NULL);
-	assert(input != NULL);
-	assert(output != NULL);
-
-	encrypt_block(state, output, input);
 }
 
 /* pkcs7 padding */
@@ -1711,4 +1171,547 @@ size_t pkcs7_padding_length(const uint8_t* input, size_t offset, size_t length)
 	}
 
 	return (size_t)code;
+}
+
+/* ctr mode */
+
+void rhx_ctr_transform(rhx_state* state, uint8_t* output, const uint8_t* input, size_t inputlen)
+{
+	assert(state != NULL);
+	assert(input != NULL);
+	assert(output != NULL);
+
+	size_t i;
+	size_t poff;
+
+	poff = 0;
+
+	while (inputlen >= RHX_BLOCK_SIZE)
+	{
+		encrypt_block(state, output + poff, state->nonce);
+
+		for (i = 0; i < RHX_BLOCK_SIZE; ++i)
+		{
+			output[poff + i] ^= input[poff + i];
+		}
+
+		be8increment(state->nonce, RHX_BLOCK_SIZE);
+
+		inputlen -= RHX_BLOCK_SIZE;
+		poff += RHX_BLOCK_SIZE;
+	}
+
+	if (inputlen != 0)
+	{
+		uint8_t tmpb[RHX_BLOCK_SIZE] = { 0 };
+
+		encrypt_block(state, tmpb, state->nonce);
+
+		for (i = 0; i < inputlen; ++i)
+		{
+			output[poff + i] = tmpb[i] ^ input[poff + i];
+		}
+
+		be8increment(state->nonce, RHX_BLOCK_SIZE);
+	}
+}
+
+/* ecb mode */
+
+void rhx_ecb_decrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input)
+{
+	assert(state != NULL);
+	assert(input != NULL);
+	assert(output != NULL);
+
+	decrypt_block(state, output, input);
+}
+
+void rhx_ecb_encrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input)
+{
+	assert(state != NULL);
+	assert(input != NULL);
+	assert(output != NULL);
+
+	encrypt_block(state, output, input);
+}
+
+/* Block-cipher counter mode with Hash Based Authentication, -HBA- AEAD authenticated mode */
+
+static const uint8_t hba_version_info[HBA_INFO_LENGTH] =
+{
+	0x48, 0x42, 0x41, 0x20, 0x76, 0x65, 0x72, 0x73, 0x69, 0x6F, 0x6E, 0x20, 0x31, 0x2E, 0x30, 0x62
+};
+
+#ifdef HBA_KMAC_AUTH
+static const uint8_t rhx256_hba_name[HBA_NAME_LENGTH] =
+{
+	0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x48, 0x42, 0x41, 0x2D, 0x52, 0x48,
+	0x58, 0x53, 0x32, 0x35, 0x36, 0x2D, 0x4B, 0x4D, 0x41, 0x43, 0x32, 0x35, 0x36
+};
+#else
+static const uint8_t rhx256_hba_name[HBA_NAME_LENGTH] =
+{
+	0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x48, 0x42, 0x41, 0x2D, 0x52, 0x48,
+	0x58, 0x48, 0x32, 0x35, 0x36, 0x2D, 0x48, 0x4D, 0x41, 0x43, 0x53, 0x48, 0x41, 0x32, 0x35, 0x36
+};
+#endif
+
+#ifdef HBA_KMAC_AUTH
+static const uint8_t rhx512_hba_name[HBA_NAME_LENGTH] =
+{
+	0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x48, 0x42, 0x41, 0x2D, 0x52, 0x48,
+	0x58, 0x53, 0x35, 0x31, 0x32, 0x2D, 0x4B, 0x4D, 0x41, 0x43, 0x35, 0x31, 0x32
+};
+#else
+static const uint8_t rhx512_hba_name[HBA_NAME_LENGTH] =
+{
+	0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x48, 0x42, 0x41, 0x2D, 0x52, 0x48,
+	0x58, 0x48, 0x35, 0x31, 0x32, 0x2D, 0x48, 0x4D, 0x41, 0x43, 0x53, 0x48, 0x41, 0x35, 0x31, 0x32
+};
+#endif
+
+static bool hba_rhx256_finalize(hba_state* state, uint8_t* output, const uint8_t* input, size_t inputlen, uint8_t* ncopy)
+{
+	uint8_t* minp;
+	uint64_t mctr;
+	const size_t TLEN = RHX_BLOCK_SIZE + inputlen + state->aadlen + sizeof(uint64_t);
+	bool res;
+
+	res = false;
+	mctr = 0;
+
+	/* allocate the input array */
+	minp = (uint8_t*)malloc(TLEN);
+
+	if (minp != NULL)
+	{
+		memset(minp, 0x00, TLEN);
+		memcpy(minp, ncopy, RHX_BLOCK_SIZE);
+
+		/* copy the ciphertext, aad, and mac counter to the buffer array */
+		if (inputlen != 0)
+		{
+			memcpy(minp + RHX_BLOCK_SIZE, input, inputlen);
+		}
+
+		if (state->aadlen != 0)
+		{
+			memcpy(minp + RHX_BLOCK_SIZE + inputlen, state->aad, state->aadlen);
+		}
+
+		/* add the nonce, input, and aad sizes to the counter */
+		mctr = RHX_BLOCK_SIZE + state->counter + state->aadlen + sizeof(uint64_t);
+		/* append the counter to the end of the mac input array */
+		le64to8(minp + RHX_BLOCK_SIZE + inputlen + state->aadlen, mctr);
+
+
+#ifdef HBA_KMAC_AUTH
+		/* mac the data and add the code to the end of the cipher-text output array */
+		kmac256(output, HBA256_MAC_LENGTH, minp, TLEN, state->mkey, state->mkeylen, NULL, 0);
+#else
+		/* mac the data and add the code to the end of the cipher-text output array */
+		hmac256_compute(output, minp, TLEN, state->mkey, state->mkeylen);
+#endif
+
+		clear8(minp, TLEN);
+		free(minp);
+
+		/* generate the new mac key */
+		uint8_t tmpn[HBA_NAME_LENGTH];
+
+		memcpy(tmpn, rhx256_hba_name, HBA_NAME_LENGTH);
+		/* add 1 + the nonce, and last input size */
+		/* append the counter to the end of the mac input array */
+		le64to8(tmpn, state->counter);
+		uint8_t mkey[HBA256_MKEY_LENGTH] = { 0 };
+
+#ifdef HBA_KMAC_AUTH
+		cshake256(mkey, HBA256_MKEY_LENGTH, state->mkey, state->mkeylen, tmpn, HBA_NAME_LENGTH, hba_version_info, HBA_INFO_LENGTH);
+		memcpy(state->mkey, mkey, HBA256_MKEY_LENGTH);
+#else
+		/* extract the HKDF key from the state mac-key and salt */
+		hkdf256_extract(mkey, HBA256_MKEY_LENGTH, state->mkey, state->mkeylen, tmpn, HBA_NAME_LENGTH);
+		/* key HKDF Expand and generate the next mac-key to state */
+		hkdf256_expand(state->mkey, state->mkeylen, mkey, HBA256_MKEY_LENGTH, hba_version_info, HBA_INFO_LENGTH);
+#endif
+
+		res = true;
+	}
+
+	return res;
+}
+
+static bool hba_rhx512_finalize(hba_state* state, uint8_t* output, const uint8_t* input, size_t inputlen, uint8_t* ncopy)
+{
+	uint8_t* minp;
+	uint64_t mctr;
+	const size_t TLEN = RHX_BLOCK_SIZE + inputlen + state->aadlen + sizeof(uint64_t);
+	bool res;
+
+	res = false;
+	mctr = 0;
+
+	/* allocate the input array */
+	minp = (uint8_t*)malloc(TLEN);
+
+	if (minp != NULL)
+	{
+		memset(minp, 0x00, TLEN);
+		memcpy(minp, ncopy, RHX_BLOCK_SIZE);
+
+		/* copy the ciphertext, aad, and mac counter to the buffer array */
+		if (inputlen != 0)
+		{
+			memcpy(minp + RHX_BLOCK_SIZE, input, inputlen);
+		}
+
+		if (state->aadlen != 0)
+		{
+			memcpy(minp + RHX_BLOCK_SIZE + inputlen, state->aad, state->aadlen);
+		}
+
+		/* add the nonce, input, and aad sizes to the counter */
+		mctr = RHX_BLOCK_SIZE + state->counter + state->aadlen + sizeof(uint64_t);
+		/* append the counter to the end of the mac input array */
+		le64to8(minp + RHX_BLOCK_SIZE + inputlen + state->aadlen, mctr);
+
+
+#ifdef HBA_KMAC_AUTH
+		/* mac the data and add the code to the end of the cipher-text output array */
+		kmac512(output, HBA512_MAC_LENGTH, minp, TLEN, state->mkey, state->mkeylen, NULL, 0);
+#else
+		/* mac the data and add the code to the end of the cipher-text output array */
+		hmac512_compute(output, minp, TLEN, state->mkey, state->mkeylen);
+#endif
+
+		clear8(minp, TLEN);
+		free(minp);
+
+		/* generate the new mac key */
+		uint8_t tmpn[HBA_NAME_LENGTH];
+
+		memcpy(tmpn, rhx512_hba_name, HBA_NAME_LENGTH);
+		/* add 1 + the nonce, and last input size */
+		/* append the counter to the end of the mac input array */
+		le64to8(tmpn, state->counter);
+		uint8_t mkey[HBA512_MKEY_LENGTH] = { 0 };
+
+#ifdef HBA_KMAC_AUTH
+		cshake512(mkey, HBA512_MKEY_LENGTH, state->mkey, state->mkeylen, tmpn, HBA_NAME_LENGTH, hba_version_info, HBA_INFO_LENGTH);
+		memcpy(state->mkey, mkey, HBA512_MKEY_LENGTH);
+#else
+		/* extract the HKDF key from the state mac-key and salt */
+		hkdf512_extract(mkey, HBA512_MKEY_LENGTH, state->mkey, state->mkeylen, tmpn, HBA_NAME_LENGTH);
+		/* key HKDF Expand and generate the next mac-key to state */
+		hkdf512_expand(state->mkey, state->mkeylen, mkey, HBA512_MKEY_LENGTH, hba_version_info, HBA_INFO_LENGTH);
+#endif
+
+		res = true;
+	}
+
+	return res;
+}
+
+static bool hba_rhx256_genkeys(const rhx_keyparams* keyparams, uint8_t* cprk, uint8_t* mack)
+{
+	uint8_t* cust;
+	const size_t CLEN = sizeof(hba_version_info) + keyparams->infolen;
+	bool res;
+
+	res = false;
+	cust = (uint8_t*)malloc(CLEN);
+
+	if (cust != NULL)
+	{
+		memset(cust, 0x00, CLEN);
+
+		/* copy hba info to the cSHAKE customization string */
+		memcpy(cust, hba_version_info, HBA_INFO_LENGTH);
+
+		/* copy the user info to custom */
+		if (keyparams->infolen != 0)
+		{
+			memcpy(cust + sizeof(hba_version_info), keyparams->info, keyparams->infolen);
+		}
+
+#ifdef RHX_SHAKE_EXTENSION
+
+		shake_state shks;
+		uint8_t sbuf[KMAC_256_RATE] = { 0 };
+
+		clear64(shks.state, SHAKE_STATE_SIZE);
+
+		/* initialize an instance of cSHAKE */
+		cshake256_initialize(&shks, keyparams->key, keyparams->keylen, rhx256_hba_name, HBA_NAME_LENGTH, cust, CLEN);
+		free(cust);
+
+		/* use two permutation calls to seperate the cipher/mac key outputs to match the CEX implementation */
+		cshake256_squeezeblocks(&shks, sbuf, 1);
+		memcpy(cprk, sbuf, keyparams->keylen);
+		cshake256_squeezeblocks(&shks, sbuf, 1);
+		memcpy(mack, sbuf, HBA256_MKEY_LENGTH);
+		/* clear the shake buffer */
+		clear64(shks.state, SHAKE_STATE_SIZE);
+#else
+
+		uint8_t kbuf[RHX256_KEY_SIZE + HBA256_MKEY_LENGTH] = { 0 };
+		uint8_t genk[HMAC_256_MAC] = { 0 };
+
+		/* extract the HKDF key from the user-key and salt */
+		hkdf256_extract(genk, sizeof(genk), keyparams->key, keyparams->keylen, rhx256_hba_name, HBA_NAME_LENGTH);
+
+		/* key HKDF Expand and generate the key buffer */
+		hkdf256_expand(kbuf, sizeof(kbuf), genk, sizeof(genk), cust, CLEN);
+
+		/* copy the cipher and mac keys from the buffer */
+		memcpy(cprk, kbuf, RHX256_KEY_SIZE);
+		memcpy(mack, kbuf + RHX256_KEY_SIZE, HBA256_MKEY_LENGTH);
+
+		/* clear the buffer */
+		memset(kbuf, 0x00, sizeof(kbuf));
+#endif
+		res = true;
+	}
+
+	return res;
+}
+
+static bool hba_rhx512_genkeys(const rhx_keyparams* keyparams, uint8_t* cprk, uint8_t* mack)
+{
+	uint8_t* cust;
+	const size_t CLEN = sizeof(hba_version_info) + keyparams->infolen;
+	bool res;
+
+	res = false;
+	cust = (uint8_t*)malloc(CLEN);
+
+	if (cust != NULL)
+	{
+		memset(cust, 0x00, CLEN);
+		/* copy hba info to the cSHAKE customization string */
+		memcpy(cust, hba_version_info, HBA_INFO_LENGTH);
+
+		/* copy the user info to custom */
+		if (keyparams->infolen != 0)
+		{
+			memcpy(cust + sizeof(hba_version_info), keyparams->info, keyparams->infolen);
+		}
+
+#ifdef RHX_SHAKE_EXTENSION
+
+		uint8_t sbuf[KMAC_512_RATE] = { 0 };
+		shake_state shks;
+
+		clear64(shks.state, SHAKE_STATE_SIZE);
+
+		/* initialize an instance of cSHAKE */
+		cshake512_initialize(&shks, keyparams->key, keyparams->keylen, rhx512_hba_name, HBA_NAME_LENGTH, cust, CLEN);
+		free(cust);
+		/* use two permutation calls to seperate the cipher/mac key outputs to match the CEX implementation */
+
+		cshake512_squeezeblocks(&shks, sbuf, 1);
+		memcpy(cprk, sbuf, keyparams->keylen);
+
+		cshake512_squeezeblocks(&shks, sbuf, 1);
+		memcpy(mack, sbuf, HBA512_MKEY_LENGTH);
+
+		/* clear the shake buffer */
+		clear64(shks.state, SHAKE_STATE_SIZE);
+
+#else
+
+		uint8_t kbuf[RHX512_KEY_SIZE + HBA512_MKEY_LENGTH] = { 0 };
+		uint8_t genk[HMAC_512_MAC] = { 0 };
+
+		/* extract the HKDF key from the user-key and salt */
+		hkdf512_extract(genk, sizeof(genk), keyparams->key, keyparams->keylen, rhx512_hba_name, HBA_NAME_LENGTH);
+
+		/* key HKDF Expand and generate the key buffer */
+		hkdf512_expand(kbuf, sizeof(kbuf), genk, sizeof(genk), cust, CLEN);
+
+		/* copy the cipher and mac keys from the buffer */
+		memcpy(cprk, kbuf, RHX512_KEY_SIZE);
+		memcpy(mack, kbuf + RHX512_KEY_SIZE, HBA512_MKEY_LENGTH);
+
+		/* clear the buffer */
+		memset(kbuf, 0x00, sizeof(kbuf));
+#endif
+		res = true;
+	}
+
+	return res;
+}
+
+/* hba common */
+
+void hba_set_associated(hba_state* state, const uint8_t* data, size_t datalen)
+{
+	state->aad = data;
+	state->aadlen = datalen;
+}
+
+void hba_rhx_dispose(hba_state* state)
+{
+	if (state != NULL)
+	{
+		if (&state->cstate != NULL);
+		{
+			rhx_dispose(&state->cstate);
+		}
+
+		if (state->mkey != NULL)
+		{
+			memset(state->mkey, 0x00, state->mkeylen);
+			free(state->mkey);
+			state->mkey = NULL;
+		}
+
+		state->aadlen = 0;
+		state->counter = 0;
+		state->mkeylen = 0;
+		state->encrypt = false;
+	}
+}
+
+/* hba-rhx256 */
+
+bool hba_rhx256_initialize(hba_state* state, const rhx_keyparams* keyparams, bool encrypt)
+{
+	uint8_t cprk[RHX256_KEY_SIZE] = { 0 };
+	uint8_t* mkey;
+	bool res;
+
+	res = false;
+
+	mkey = (uint8_t*)malloc(HBA256_MKEY_LENGTH);
+
+	if (mkey != NULL)
+	{
+		/* generate the cipher and mac keys */
+		hba_rhx256_genkeys(keyparams, cprk, mkey);
+		/* initialize the state and set the round-key array size */
+
+		state->mkey = mkey;
+		state->mkeylen = HBA256_MKEY_LENGTH;
+		/* initialize the key parameters struct, info is optional */
+		rhx_keyparams kp = { cprk, RHX256_KEY_SIZE, keyparams->nonce, keyparams->info, keyparams->infolen };
+		/* initialize the cipher state */
+		rhx_initialize(&state->cstate, &kp, true, RHX256);
+
+		/* populate the hba state structure with mac-key and counter */
+		/* the state counter always initializes at 1 */
+		state->counter = 1;
+		state->encrypt = encrypt;
+		state->aadlen = 0;
+		res = true;
+	}
+
+	return res;
+}
+
+bool hba_rhx256_transform(hba_state* state, uint8_t* output, const uint8_t* input, size_t inputlen)
+{
+	bool res;
+	uint8_t ncopy[RHX_BLOCK_SIZE] = { 0 };
+
+	res = false;
+	/* store the nonce */
+	memcpy(ncopy, state->cstate.nonce, RHX_BLOCK_SIZE);
+	/* update the processed bytes counter */
+	state->counter += inputlen;
+
+	if (state->encrypt)
+	{
+		/* use rhx counter-mode to encrypt the array */
+		rhx_ctr_transform(&state->cstate, output, input, inputlen);
+
+		/* mac the cipher-text appending the code to the end of the array */
+		res = hba_rhx256_finalize(state, output + inputlen, output, inputlen, ncopy);
+	}
+	else
+	{
+		uint8_t code[HBA256_MAC_LENGTH] = { 0 };
+		hba_rhx256_finalize(state, code, input, inputlen, ncopy);
+
+		/* test the mac for equality, bypassing the transform if the mac check fails */
+		if (verify(code, input + inputlen, HBA256_MAC_LENGTH) == 0)
+		{
+			/* use rhx counter-mode to decrypt the array */
+			rhx_ctr_transform(&state->cstate, output, input, inputlen);
+			res = true;
+		}
+	}
+
+	return res;
+}
+
+/* hba-rhx512 */
+
+bool hba_rhx512_initialize(hba_state* state, const rhx_keyparams* keyparams, bool encrypt)
+{
+	uint8_t cprk[RHX512_KEY_SIZE] = { 0 };
+	uint8_t* mkey;
+	bool res;
+
+	res = false;
+	mkey = (uint8_t*)malloc(HBA512_MKEY_LENGTH);
+
+	if (mkey != NULL)
+	{
+		/* generate the cipher and mac keys */
+		hba_rhx512_genkeys(keyparams, cprk, mkey);
+		/* initialize the state and set the round-key array size */
+		state->mkey = mkey;
+		state->mkeylen = HBA512_MKEY_LENGTH;
+		/* initialize the key parameters struct, info is optional */
+		rhx_keyparams kp = { cprk, RHX512_KEY_SIZE, keyparams->nonce, keyparams->info, keyparams->infolen };
+		/* initialize the cipher state */
+		rhx_initialize(&state->cstate, &kp, true, RHX512);
+
+		/* populate the hba state structure with mac-key and counter */
+		/* the state counter always initializes at 1 */
+		state->counter = 1;
+		state->encrypt = encrypt;
+		state->aadlen = 0;
+		res = true;
+	}
+
+	return res;
+}
+
+bool hba_rhx512_transform(hba_state* state, uint8_t* output, const uint8_t* input, size_t inputlen)
+{
+	bool res;
+	uint8_t ncopy[RHX_BLOCK_SIZE] = { 0 };
+
+	res = false;
+	/* store the nonce */
+	memcpy(ncopy, state->cstate.nonce, RHX_BLOCK_SIZE);
+	/* update the processed bytes counter */
+	state->counter += inputlen;
+
+	if (state->encrypt)
+	{
+		/* use rhx counter-mode to encrypt the array */
+		rhx_ctr_transform(&state->cstate, output, input, inputlen);
+
+		/* mac the cipher-text appending the code to the end of the array */
+		res = hba_rhx512_finalize(state, output + inputlen, output, inputlen, ncopy);
+	}
+	else
+	{
+		uint8_t code[HBA512_MAC_LENGTH] = { 0 };
+		hba_rhx512_finalize(state, code, input, inputlen, ncopy); //118,201..219
+
+		/* test the mac for equality, bypassing the transform if the mac check fails */
+		if (verify(code, input + inputlen, HBA512_MAC_LENGTH) == 0)
+		{
+			/* use rhx counter-mode to decrypt the array */
+			rhx_ctr_transform(&state->cstate, output, input, inputlen);
+			res = true;
+		}
+	}
+
+	return res;
 }

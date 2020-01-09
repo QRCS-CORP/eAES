@@ -1898,6 +1898,23 @@ void hkdf256_expand(uint8_t* output, size_t outlen, const uint8_t* key, size_t k
 	}
 }
 
+void hkdf256_extract(uint8_t* output, size_t outlen, const uint8_t* key, size_t keylen, const uint8_t* salt, size_t saltlen)
+{
+	hmac256_state state;
+
+	if (saltlen != 0)
+	{
+		hmac256_initialize(&state, salt, saltlen);
+	}
+	else
+	{
+		uint8_t tmp[HMAC_256_MAC] = { 0 };
+		hmac256_initialize(&state, tmp, sizeof(tmp));
+	}
+
+	hmac256_finalize(&state, output, key, keylen);
+}
+
 /* HKDF-512 */
 
 void hkdf512_expand(uint8_t* output, size_t outlen, const uint8_t* key, size_t keylen, const uint8_t* info, size_t infolen)
@@ -1988,4 +2005,21 @@ void hkdf512_expand(uint8_t* output, size_t outlen, const uint8_t* key, size_t k
 		outlen -= rmd;
 		output += rmd;
 	}
+}
+
+void hkdf512_extract(uint8_t* output, size_t outlen, const uint8_t* key, size_t keylen, const uint8_t* salt, size_t saltlen)
+{
+	hmac512_state state;
+
+	if (saltlen != 0)
+	{
+		hmac512_initialize(&state, salt, saltlen);
+	}
+	else
+	{
+		uint8_t tmp[HMAC_512_MAC] = { 0 };
+		hmac512_initialize(&state, tmp, sizeof(tmp));
+	}
+
+	hmac512_finalize(&state, output, key, keylen);
 }

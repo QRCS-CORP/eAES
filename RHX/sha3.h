@@ -123,7 +123,7 @@
 #ifndef QSC_SHA3_H
 #define QSC_SHA3_H
 
-#include "common.h""
+#include <stdint.h>
 
 /*!
 \def KECCAK_PERMUTATION_ROUNDS

@@ -253,14 +253,14 @@ void keccak_permute(uint64_t* state)
 
 	for (i = 0; i < KECCAK_PERMUTATION_ROUNDS; i += 2)
 	{
-		// prepareTheta
+		/* prepareTheta */
 		BCa = Aba ^ Aga^Aka^Ama^Asa;
 		BCe = Abe ^ Age^Ake^Ame^Ase;
 		BCi = Abi ^ Agi^Aki^Ami^Asi;
 		BCo = Abo ^ Ago^Ako^Amo^Aso;
 		BCu = Abu ^ Agu^Aku^Amu^Asu;
 
-		// thetaRhoPiChiIotaPrepareTheta
+		/* thetaRhoPiChiIotaPrepareTheta */
 		Da = BCu ^ rotl64(BCe, 1);
 		De = BCa ^ rotl64(BCi, 1);
 		Di = BCe ^ rotl64(BCo, 1);
@@ -348,14 +348,14 @@ void keccak_permute(uint64_t* state)
 		Eso = BCo ^ ((~BCu)&  BCa);
 		Esu = BCu ^ ((~BCa)&  BCe);
 
-		// prepareTheta
+		/* prepareTheta */
 		BCa = Eba ^ Ega^Eka^Ema^Esa;
 		BCe = Ebe ^ Ege^Eke^Eme^Ese;
 		BCi = Ebi ^ Egi^Eki^Emi^Esi;
 		BCo = Ebo ^ Ego^Eko^Emo^Eso;
 		BCu = Ebu ^ Egu^Eku^Emu^Esu;
 
-		// thetaRhoPiChiIotaPrepareTheta
+		/* thetaRhoPiChiIotaPrepareTheta */
 		Da = BCu ^ rotl64(BCe, 1);
 		De = BCa ^ rotl64(BCi, 1);
 		Di = BCe ^ rotl64(BCo, 1);
@@ -444,7 +444,7 @@ void keccak_permute(uint64_t* state)
 		Asu = BCu ^ ((~BCa)&  BCe);
 	}
 
-	// copy to state
+	/* copy to state */
 	state[0] = Aba;
 	state[1] = Abe;
 	state[2] = Abi;
@@ -2769,7 +2769,7 @@ void sha3_finalize(sha3_state* state, size_t rate, const uint8_t* message, size_
 
 void sha3_initialize(sha3_state* state)
 {
-	clear64(state, SHA3_STATE_SIZE);
+	clear64(state->state, SHA3_STATE_SIZE);
 }
 
 /* shake */

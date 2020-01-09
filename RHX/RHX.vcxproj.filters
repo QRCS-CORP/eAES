@@ -27,9 +27,6 @@
     <ClCompile Include="sysrand.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="sha3_kat.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="sha2.c">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -49,6 +46,9 @@
       <Filter>Source Files\Tests</Filter>
     </ClCompile>
     <ClCompile Include="rhx_test.c">
+      <Filter>Source Files\Tests</Filter>
+    </ClCompile>
+    <ClCompile Include="sha3_kat.c">
       <Filter>Source Files\Tests</Filter>
     </ClCompile>
   </ItemGroup>

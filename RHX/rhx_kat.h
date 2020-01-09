@@ -98,7 +98,7 @@ bool rhx512_ctr_stress_test();
 /**
 * \brief Tests the RSX/RHX 256-bit key KAT vectors from CEX.
 * The C++ <a href="https://github.com/Steppenwolfe65/CEX">CEX cryptrographic library</a>
-* If RHX_CSHAKE_EXTENSION is defined (default) the cSHAKE extension is tested, if it is not defined, reverts to the HKDF(SHA2) extension.
+* If RHX_SHAKE_EXTENSION is defined (default) the cSHAKE extension is tested, if it is not defined, reverts to the HKDF(SHA2) extension.
 *
 * \return Returns true for success
 *
@@ -110,7 +110,7 @@ bool rhx256_ecb_kat_test();
 /**
 * \brief Tests the RSX/RHX 512-bit key KAT vectors from CEX.
 * The C++ <a href="https://github.com/Steppenwolfe65/CEX">CEX cryptrographic library</a>
-* If RHX_CSHAKE_EXTENSION is defined in rhx.h (default) the cSHAKE extension is tested, if it is not defined, reverts to the HKDF(SHA2) extension.
+* If RHX_SHAKE_EXTENSION is defined in rhx.h (default) the cSHAKE extension is tested, if it is not defined, reverts to the HKDF(SHA2) extension.
 *
 * \return Returns true for success
 *
@@ -122,7 +122,7 @@ bool rhx512_ecb_kat_test();
 /**
 * \brief Tests the RSX/RHX 256-bit key Monte Carlo vectors from CEX.
 * The C++ <a href="https://github.com/Steppenwolfe65/CEX">CEX cryptrographic library</a>
-* If RHX_CSHAKE_EXTENSION is defined (default) the cSHAKE extension is tested, if it is not defined, reverts to the HKDF(SHA2) extension.
+* If RHX_SHAKE_EXTENSION is defined (default) the cSHAKE extension is tested, if it is not defined, reverts to the HKDF(SHA2) extension.
 *
 * \return Returns true for success
 *
@@ -134,7 +134,7 @@ bool rhx256_monte_carlo_test();
 /**
 * \brief Tests the RSX/RHX 512-bit key Monte Carlo vectors from CEX.
 * The C++ <a href="https://github.com/Steppenwolfe65/CEX">CEX cryptrographic library</a>
-* If RHX_CSHAKE_EXTENSION is defined in rhx.h (default) the cSHAKE extension is tested, if it is not defined, reverts to the HKDF(SHA2) extension.
+* If RHX_SHAKE_EXTENSION is defined in rhx.h (default) the cSHAKE extension is tested, if it is not defined, reverts to the HKDF(SHA2) extension.
 *
 * \return Returns true for success
 *
@@ -146,7 +146,7 @@ bool rhx512_monte_carlo_test();
 /**
 * \brief Tests the Hash Based Authentication (HBA-RSX/RHX) AEAD mode using 256-bit key KAT vectors from CEX.
 * The C++ <a href="https://github.com/Steppenwolfe65/CEX">CEX cryptrographic library</a>
-* If RHX_CSHAKE_EXTENSION is defined in rhx.h (default) the cSHAKE extension is tested, if it is not defined, reverts to the HKDF(SHA2) extension.
+* If RHX_SHAKE_EXTENSION is defined in rhx.h (default) the cSHAKE extension is tested, if it is not defined, reverts to the HKDF(SHA2) extension.
 *
 * \return Returns true for success
 *
@@ -158,7 +158,7 @@ bool hba_rhx256_kat_test();
 /**
 * \brief Tests the Hash Based Authentication (HBA-RSX/RHX) AEAD mode using 512-bit key KAT vectors from CEX.
 * The C++ <a href="https://github.com/Steppenwolfe65/CEX">CEX cryptrographic library</a>
-* If RHX_CSHAKE_EXTENSION is defined in rhx.h (default) the cSHAKE extension is tested, if it is not defined, reverts to the HKDF(SHA2) extension.
+* If RHX_SHAKE_EXTENSION is defined in rhx.h (default) the cSHAKE extension is tested, if it is not defined, reverts to the HKDF(SHA2) extension.
 *
 * \return Returns true for success
 *
