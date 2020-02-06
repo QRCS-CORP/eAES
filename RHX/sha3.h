@@ -2,6 +2,7 @@
 * \file sha3.h
 * \author John Underhill
 * \date October 27, 2019
+* \updated February 5, 2020
 *
 * \brief <b>SHA3 header definition</b> \n
 * Contains the public api and documentation for SHA3 digest, SHAKE, cSHAKE, and KMAC implementations.
@@ -707,94 +708,6 @@ void cshake512_update(shake_state* state, const uint8_t* key, size_t keylen);
 * \param nblocks: The number of blocks to extract
 */
 void cshake512_squeezeblocks(shake_state* state, uint8_t* output, size_t nblocks);
-
-/* simple cshake */
-
-/**
-* \brief Key a simplified cSHAKE-128 instance and generate pseudo-random output.
-* Short form api: processes the key and custom inputs and generates the pseudo-random output with a single call.
-* Permutes and extracts the state to an output byte array.
-*
-* \warning This function has a counter period of 2^16.
-*
-* \param output: The output byte array
-* \param outputlen: The number of output bytes to generate
-* \param custom: The 16bit customization integer
-* \param key: The input key byte array
-* \param keylen: The number of key bytes to process
-*/
-void cshake128_simple(uint8_t* output, size_t outputlen, uint16_t custom, const uint8_t* key, size_t keylen);
-
-/**
-* \brief The cSHAKE-128 simple initialize function.
-* Long form api: must be used in conjunction with the squeezeblocks function.
-* Absorb and finalize an input key directly into the state.
-*
-* \warning Finalizes the key state, should not be used in consecutive calls. \n
-* State must be initialized (and zeroed) by the caller.
-*
-* \param state: [struct] The function state; must be pre-initialized
-* \param custom: The 16bit customization integer
-* \param key: The input key byte array
-* \param keylen: The number of key bytes to process
-*/
-void cshake128_simple_initialize(shake_state* state, uint16_t custom, const uint8_t* key, size_t keylen);
-
-/**
-* \brief The cSHAKE-128 simple squeeze function.
-* Long form api: must be used in conjunction with the initialize function.
-* Permutes and extracts blocks of state to an output byte array.
-*
-* \warning Output array must be initialized to a multiple of the byte rate.
-*
-* \param state: [struct] The function state; must be pre-initialized
-* \param output: The output byte array
-* \param nblocks: The number of blocks to extract
-*/
-void cshake128_simple_squeezeblocks(shake_state* state, uint8_t* output, size_t nblocks);
-
-/**
-* \brief Key a cSHAKE-256 instance and generate pseudo-random output.
-* Short form api: processes the key and custom inputs and generates the pseudo-random output with a single call.
-* Permutes and extracts the state to an output byte array.
-*
-* \warning This function has a counter period of 2^16.
-*
-* \param output: The output byte array
-* \param outputlen: The number of output bytes to generate
-* \param custom: The 16bit customization integer
-* \param key: The input key byte array
-* \param keylen: The number of key bytes to process
-*/
-void cshake256_simple(uint8_t* output, size_t outputlen, uint16_t custom, const uint8_t* key, size_t keylen);
-
-/**
-* \brief The cSHAKE-256 simple initialize function.
-* Long form api: must be used in conjunction with the squeezeblocks function.
-* Absorb and finalize an input key directly into the state.
-*
-* \warning Finalizes the key state, should not be used in consecutive calls. \n
-* State must be initialized (and zeroed) by the caller.
-*
-* \param state: [struct] The function state; must be pre-initialized
-* \param custom: The 16bit customization integer
-* \param key: The input key byte array
-* \param keylen: The number of key bytes to process
-*/
-void cshake256_simple_initialize(shake_state* state, uint16_t custom, const uint8_t* key, size_t keylen);
-
-/**
-* \brief The cSHAKE-256 simple squeeze function.
-* Long form api: must be used in conjunction with the initialize function.
-* Permutes and extracts blocks of state to an output byte array.
-*
-* \warning Output array must be initialized to a multiple of the byte rate.
-*
-* \param state: [struct] The function state; must be pre-initialized
-* \param output: The output byte array
-* \param nblocks: The number of blocks to extract
-*/
-void cshake256_simple_squeezeblocks(shake_state* state, uint8_t* output, size_t nblocks);
 
 /* kmac */
 

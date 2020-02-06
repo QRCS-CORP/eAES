@@ -1,17 +1,3 @@
-/********************************************************************************************
-* SHA3-derived functions: SHA3-256, SHA3-512, SHAKE, and cSHAKE
-*
-* Based on the public domain implementation in crypto_hash/keccakc512/simple/
-* from http://bench.cr.yp.to/supercop.html by Ronny Van Keer
-* and the public domain "TweetFips202" implementation from https://twitter.com/tweetfips202
-* by Gilles Van Assche, Daniel J. Bernstein, and Peter Schwabe
-*
-* See NIST Special Publication 800-185 for more information:
-* http://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-185.pdf
-*
-* Updated by John Underhill, December 24, 2017
-*********************************************************************************************/
-
 #include "sha3.h"
 #include "intutils.h"
 
@@ -224,7 +210,7 @@ void keccak_permute(uint64_t* state)
 	uint64_t Esu;
 	size_t i;
 
-	//copyFromState(A, state)
+	/* copyFromState(A, state) */
 	Aba = state[0];
 	Abe = state[1];
 	Abi = state[2];
@@ -3209,109 +3195,6 @@ void cshake512_squeezeblocks(shake_state* state, uint8_t* output, size_t nblocks
 void cshake512_update(shake_state* state, const uint8_t* key, size_t keylen)
 {
 	keccak_absorb(state->state, CSHAKE_512_RATE, key, keylen, CSHAKE_DOMAIN_ID);
-}
-
-/* simple cshake */
-
-void cshake128_simple(uint8_t* output, size_t outputlen, uint16_t custom, const uint8_t* key, size_t keylen)
-{
-	const size_t nblocks = outputlen / CSHAKE_128_RATE;
-	shake_state state;
-	uint8_t hash[CSHAKE_128_RATE] = { 0 };
-	size_t i;
-
-	clear64(state.state, SHA3_STATE_SIZE);
-	cshake128_simple_initialize(&state, custom, key, keylen);
-	cshake128_simple_squeezeblocks(&state, output, nblocks);
-
-	output += (nblocks * CSHAKE_128_RATE);
-	outputlen -= (nblocks * CSHAKE_128_RATE);
-
-	if (outputlen != 0)
-	{
-		cshake128_simple_squeezeblocks(&state, hash, 1);
-
-		for (i = 0; i < outputlen; ++i)
-		{
-			output[i] = hash[i];
-		}
-	}
-}
-
-void cshake128_simple_initialize(shake_state* state, uint16_t custom, const uint8_t* key, size_t keylen)
-{
-	uint8_t sep[8];
-	sep[0] = 0x01;			/* rate len */
-	sep[1] = 0xA8;			/* rate */
-	sep[2] = 0x01;			/* name len */
-	sep[3] = 0x00;			/* name */
-	sep[4] = 0x01;			/* name */
-	sep[5] = 0x10;			/* custom len */
-	sep[6] = custom & 0xFF;	/* custom */
-	sep[7] = custom >> 8;	/* custom */
-
-	state->state[0] = le8to64(sep);
-
-	/* transform the domain string */
-	keccak_permute(state->state);
-	/* absorb the key */
-	keccak_absorb(state->state, CSHAKE_128_RATE, key, keylen, CSHAKE_DOMAIN_ID);
-}
-
-void cshake128_simple_squeezeblocks(shake_state* state, uint8_t* output, size_t nblocks)
-{
-	keccak_squeezeblocks(state->state, output, nblocks, CSHAKE_128_RATE);
-}
-
-void cshake256_simple(uint8_t* output, size_t outputlen, uint16_t custom, const uint8_t* key, size_t keylen)
-{
-	const size_t nblocks = outputlen / CSHAKE_256_RATE;
-	shake_state state;
-	uint8_t hash[CSHAKE_256_RATE] = { 0 };
-	size_t i;
-
-	clear64(state.state, SHA3_STATE_SIZE);
-	cshake256_simple_initialize(&state, custom, key, keylen);
-	cshake256_simple_squeezeblocks(&state, output, nblocks);
-
-	output += (nblocks * CSHAKE_256_RATE);
-	outputlen -= (nblocks * CSHAKE_256_RATE);
-
-	if (outputlen != 0)
-	{
-		cshake256_simple_squeezeblocks(&state, hash, 1);
-
-		for (i = 0; i < outputlen; ++i)
-		{
-			output[i] = hash[i];
-		}
-	}
-}
-
-void cshake256_simple_initialize(shake_state* state, uint16_t custom, const uint8_t* key, size_t keylen)
-{
-	uint8_t sep[8];
-	sep[0] = 0x01; /* bytepad */
-	sep[1] = 0x88;
-	sep[2] = 0x01;
-	sep[3] = 0x00;
-	sep[4] = 0x01;
-	sep[5] = 0x10; /* bitlen of custom */
-	sep[6] = custom & 0xFF;
-	sep[7] = custom >> 8;
-
-	state->state[0] = le8to64(sep);
-
-	/* transform the domain string */
-	keccak_permute(state->state);
-
-	/* absorb the state */
-	keccak_absorb(state->state, CSHAKE_256_RATE, key, keylen, CSHAKE_DOMAIN_ID);
-}
-
-void cshake256_simple_squeezeblocks(shake_state* state, uint8_t* output, size_t nblocks)
-{
-	keccak_squeezeblocks(state->state, output, nblocks, CSHAKE_256_RATE);
 }
 
 /* kmac */
