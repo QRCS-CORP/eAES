@@ -20,30 +20,30 @@
 * Implementation Details:
 * An implementation of the Rijndael Hash-based eXtension (RHX/RSX=eAES) symmetric block cipher.
 * Written by John G. Underhill
-* Updated on January 9, 2020
+* Updated on January 20, 2020
 * Contact: develop@vtdev.com */
 
 /*!
 * \mainpage <b>The RHX cipher</b>
 * \section intro_sec Welcome
 * <p>The RHX (Rijndael Hash-based eXtension) cipher, is a hybrid of Rijndael (AES) and a cryptographically strong pseudo-random generator function.
-* The cryptographic PRNG, is used to generate the round keys for the Rijndael rounds function, enabling the safe addition of increased mixing rounds, 
+* The cryptographic KDF, is used to generate the round keys for the Rijndael rounds function, enabling the safe addition of increased mixing rounds, 
 * and replacing the differentially-weak native Rijndael key-schedule expansion function. \n
-* The cipher also increases the number of mixing rounds from 14 used by AES-256, to 22 used by RHX-256, twice the best known classical computer attack.
+* The cipher increases the number of mixing rounds from 14 used by AES-256, to 22 used by RHX-256, twice the best known classical computer attack.
 * The cipher also has a 512-bit key configuration, which uses 30 rounds of mixing. 
 * There are attacks now being proposed, that strongly indicate that larger key sizes will be necessary against future quantum-based attacks on symmetric ciphers.</p>
 * 
 * <p>The default extension used by this cipher is the Keccak cSHAKE extended output function (XOF).
 * The fallback generator is HKDF(HMAC(SHA2)) Expand.
-* Both genertors are implemented in 256 and 512-bit forms of those functions, and implemented correlating to the input cipher-key size.
+* Both genertors are implemented in 256 and 512-bit forms of those functions, correlating to the input cipher-key size.
 * The cipher code names are based on which generator is used; RHX for Rijndael HKDF eXtension, and RSX for Rijndael SHAKE eXtension, 
 * with the ciphers formal name now being 'eAES', or extended AES.
 * The cipher has four modes, AES128 and AES256, which are the standard AES configurations, and the two extended modes, RSX/RHX-256 and RSX/RHX-512.
 * In extended mode, the key schedules round-key expansion function has been replaced by cSHAKE or HKDF, and can now can safely produce a larger round-key array,
 * unlocking an increased number of mixing rounds, and preventing many serious forms of attack on the Rijndael cipher.</p>
 *
-* <p>This is a 'tweakable cipher', the initialization parameters for the cipher include an info parameter.
-* Internally, the info parameter is used to customize the SHAKE output, using the 'name' parameter to pre-initialize the SHAKE state. 
+* <p>This is a 'tweakable cipher', the initialization parameters rhx_keyparams, include an info parameter.
+* Internally, the info parameter is used to customize the SHAKE output, using the 'name' parameter to pre-initialize the cSHAKE state. 
 * If using the HKDF extension, this parameter is used as the HKDF Expand 'info' parameter, added to the input key and internal counter, and processed by the HMAC pseudo-random function.
 * The default value for this information parameter is the cipher name, the extension type H or S, the size of the extension generators security in bits, 
 * and the size of the key in bits, as a 16-bit Little Endian integer, ex. RHX using the SHAKE extension, and a 256-bit key would be: RHXS25610.
@@ -70,9 +70,9 @@
 * The AES-NI implementation can be enabled by adding the RHX_AESNI_ENABLED constant to your preprocessor definitions. \n
 * The implementation can be toggled from SHA3 to SHA2 operation mode by adding the RHX_HKDF_EXTENSION to the pre-processor definitions. \n
 * The AES128 and AES256 implementations along with the ECB, CTR, and CBC modes are tested using vectors from NIST SP800-38a. \n
-* The RHX-256, RHX-512, and HBA known answer vectors are taken from the CEX++ cryptographic library <a href="https://github.com/Steppenwolfe65/CEX">The CEX++ Cryptographic Library</a>. \n
-* SP800-38a: <a href="http://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38a.pdf">Block Cipher Modes of Operations</a>. \n
-* See the documentation and the rhx_kat.h tests for usage examples.</p>
+* The RHX-256, RHX-512, and HBA known answer vectors are taken from the CEX++ cryptographic library;
+* <a href="https://github.com/Steppenwolfe65/CEX">The CEX++ Cryptographic Library</a>. \n
+* See the documentation and the rhx_kat.c tests for usage examples.</p>
 *
 * \ section Links
 * Towards post-quantum symmetric cryptography
@@ -84,7 +84,7 @@
 * \author		John G. Underhill
 * \version		1.0.0.0c
 * \date			October 20, 2019
-* \updated		January 08, 2020
+* \updated		January 20, 2020
 * \contact:		develop@vtdev.com
 * \copyright	GPL version 3 license (GPLv3)
 */
@@ -95,7 +95,7 @@
 * Rijndael Hash Extended.
 *
 * \author John Underhill
-* \date January 09, 2020
+* \date January 20, 2020
 *
 
 * <b>RHX-256 CTR short-form api example</b> \n
@@ -132,7 +132,7 @@
 * ...
 *
 * // mac-code will be appended to the cipher-text
-* uint8_t enc[MSG_LEN + HBA512_MAC_LENGTH] = { 0 };
+* uint8_t cpt[MSG_LEN + HBA512_MAC_LENGTH] = { 0 };
 * hba_keyparams kp = { key, RHX512_KEY_SIZE, nonce, cust, CST_LEN};
 *
 * // initialize the cipher state for encryption
@@ -140,25 +140,25 @@
 * // add the associated data
 * hba_set_associated(&state, aad, sizeof(aad));
 * // encrypt the message
-* hba_rhx512_transform(&state, enc, msg, MSG_LEN);
+* hba_rhx512_transform(&state, cpt, msg, MSG_LEN);
 * \endcode
 *
 *
 * <b>HBA RHX-512 decryption example</b> \n
 * \code
 * // external cipher-text, key and custom-info arrays
-* const size_t CTXT_LEN = 200;
+* const size_t CPT_LEN = 200;
 * const size_t CUST_LEN = 20;
 * const size_t AAD_LEN = 20;
 * // the cipher-text containing the encrypted plain-text and the mac-code
-* uint8_t cpt[CTXT_LEN] = { hba_encrypt(k,p) }
+* uint8_t cpt[CPT_LEN] = { hba_encrypt(k,p) }
 * uint8_t key[RHX256_KEY_SIZE] = {...};
 * uint8_t nonce[RHX_BLOCK_SIZE] = {...};
 * uint8_t cust[CST_LEN] = {...};
 * ...
 * // subtract the mac-code length from the overall cipher-text length for the message size
-* const size_t MSG_LEN = CTXT_LEN - HBA512_MAC_LENGTH;
-* uint8_t dec[MSG_LEN] = { 0 };
+* const size_t MSG_LEN = CPT_LEN - HBA512_MAC_LENGTH;
+* uint8_t msg[MSG_LEN] = { 0 };
 * hba_keyparams kp = { key, RHX512_KEY_SIZE, nonce, cust, CST_LEN, aad, AAD_LEN };
 *
 * // initialize the cipher state for decryption
@@ -166,7 +166,7 @@
 * // add the associated data
 * hba_set_associated(&state, aad, sizeof(aad));
 * // authenticate and decrypt the cipher-text
-* if (hba_rhx512_transform(&state, dec, enc, CTXT_LEN - HBA512_MAC_LENGTH) == false)
+* if (hba_rhx512_transform(&state, msg, cpt, CPT_LEN - HBA512_MAC_LENGTH) == false)
 * {
 *	// authentication has failed, do something..
 * }
@@ -197,7 +197,7 @@ typedef enum
 	AES256 = 2,	/*!< The AES-256 block cipher */
 	RHX256 = 3,	/*!< The RHX-256 block cipher */
 	RHX512 = 4,	/*!< The RHX-512 block cipher */
-} cipher_type;
+} rhx_cipher_type;
 
 /*! \enum cipher_mode
 * The pre-defined cipher mode implementations
@@ -222,13 +222,19 @@ typedef enum
 #ifndef RHX_AESNI_ENABLED
 //#	define RHX_AESNI_ENABLED
 #endif 
+
 #ifdef RHX_AESNI_ENABLED
+#	if defined(_MSC_VER)
+#		include <intrin.h>
+#	elif defined(__GNUC__)
+#		include <x86intrin.h>
+#	endif
 #	include <wmmintrin.h>
 #endif
 
 /*!
 \def RHX_HKDF_EXTENSION
-* Enables the HKDF extensions for the cipher (alternate mode of operation).
+* Enables the HKDF extensions for the cipher (alternate mode of authentication).
 * If not defined, the default cSHAKE extensions are used.
 */
 #ifndef RHX_HKDF_EXTENSION
@@ -310,10 +316,10 @@ typedef enum
 */
 typedef struct
 {
-	uint8_t* key;					/*!< The input cipher key */
+	const uint8_t* key;				/*!< The input cipher key */
 	size_t keylen;					/*!< The length in bytes of the cipher key */
 	uint8_t* nonce;					/*!< The nonce or initialization vector */
-	uint8_t* info;					/*!< The information tweak */
+	const uint8_t* info;			/*!< The information tweak */
 	size_t infolen;					/*!< The length in bytes of the information tweak */
 } rhx_keyparams;
 
@@ -349,7 +355,7 @@ void rhx_dispose(rhx_state* state);
 *
 * \warning When using a CTR mode, the cipher is always initialized for encryption.
 */
-bool rhx_initialize(rhx_state* state, const rhx_keyparams* keyparams, bool encryption, cipher_type ctype);
+bool rhx_initialize(rhx_state* state, const rhx_keyparams* keyparams, bool encryption, rhx_cipher_type ctype);
 
 /* cbc mode */
 

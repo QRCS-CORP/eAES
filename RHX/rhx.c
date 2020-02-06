@@ -131,7 +131,7 @@ static const uint8_t RHX_HKDF512_INFO[7] = { 82, 72, 88, 72, 53, 49, 50 };
 
 #ifdef RHX_AESNI_ENABLED
 
-static void decrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input)
+static void rhx_decrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input)
 {
 	const size_t RNDCNT = state->rndkeylen - 2;
 	__m128i x;
@@ -151,7 +151,7 @@ static void decrypt_block(rhx_state* state, uint8_t* output, const uint8_t* inpu
 	_mm_storeu_si128((__m128i*)output, _mm_aesdeclast_si128(x, state->roundkeys[keyctr]));
 }
 
-static void encrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input)
+static void rhx_encrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input)
 {
 	const size_t RNDCNT = state->rndkeylen - 2;
 	__m128i x;
@@ -171,7 +171,7 @@ static void encrypt_block(rhx_state* state, uint8_t* output, const uint8_t* inpu
 	_mm_storeu_si128((__m128i*)output, _mm_aesenclast_si128(x, state->roundkeys[keyctr]));
 }
 
-static void expand_rot(__m128i* Key, size_t Index, size_t Offset)
+static void rhx_expand_rot(__m128i* Key, size_t Index, size_t Offset)
 {
 	__m128i pkb;
 
@@ -183,7 +183,7 @@ static void expand_rot(__m128i* Key, size_t Index, size_t Offset)
 	Key[Index] = _mm_xor_si128(pkb, Key[Index]);
 }
 
-static void expand_sub(__m128i* Key, size_t Index, size_t Offset)
+static void rhx_expand_sub(__m128i* Key, size_t Index, size_t Offset)
 {
 	__m128i pkb;
 
@@ -195,15 +195,7 @@ static void expand_sub(__m128i* Key, size_t Index, size_t Offset)
 	Key[Index] = _mm_xor_si128(pkb, Key[Index]);
 }
 
-static void le32_to_bytes(const uint32_t value, uint8_t* output, size_t offset)
-{
-	output[offset] = (uint8_t)value;
-	output[offset + 1] = (uint8_t)(value >> 8);
-	output[offset + 2] = (uint8_t)(value >> 16);
-	output[offset + 3] = (uint8_t)(value >> 24);
-}
-
-static bytes_to_le128(uint8_t* input, size_t inplen, __m128i* output, size_t outlen)
+static le128to8(uint8_t* input, size_t inplen, __m128i* output, size_t outlen)
 {
 	size_t i;
 	uint32_t tmpk;
@@ -211,7 +203,7 @@ static bytes_to_le128(uint8_t* input, size_t inplen, __m128i* output, size_t out
 	for (i = 0; i < inplen; i += sizeof(uint32_t))
 	{
 		tmpk = be8to32(input + i);
-		le32_to_bytes(tmpk, input, i);
+		le32to8(tmpk, input, i);
 	}
 
 	for (i = 0; i < outlen; ++i)
@@ -220,7 +212,7 @@ static bytes_to_le128(uint8_t* input, size_t inplen, __m128i* output, size_t out
 	}
 }
 
-static void secure_expand(rhx_state* state, rhx_keyparams* keyparams)
+static void rhx_secure_expand(rhx_state* state, rhx_keyparams* keyparams)
 {
 	uint8_t* tmpi;
 	uint16_t kblen;
@@ -275,7 +267,7 @@ static void secure_expand(rhx_state* state, rhx_keyparams* keyparams)
 			/* generate the round-key buffer with cSHAKE-256 */
 			cshake256(rk, state->rndkeylen * sizeof(__m128i), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen, NULL, 0);
 			/* convert the bytes to little endian encoded 128-bit integers */
-			bytes_to_le128(rk, state->rndkeylen * sizeof(__m128i), state->roundkeys, state->rndkeylen);
+			le128to8(rk, state->rndkeylen * sizeof(__m128i), state->roundkeys, state->rndkeylen);
 		}
 		else
 		{
@@ -284,7 +276,7 @@ static void secure_expand(rhx_state* state, rhx_keyparams* keyparams)
 			/* generate the round-key buffer with cSHAKE-512 */
 			cshake512(rk, state->rndkeylen * sizeof(__m128i), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen, NULL, 0);
 			/* convert the bytes to little endian encoded 128-bit integers */
-			bytes_to_le128(rk, state->rndkeylen * sizeof(__m128i), state->roundkeys, state->rndkeylen);
+			le128to8(rk, state->rndkeylen * sizeof(__m128i), state->roundkeys, state->rndkeylen);
 		}
 #else
 		if (keyparams->keylen == RHX256_KEY_SIZE)
@@ -294,7 +286,7 @@ static void secure_expand(rhx_state* state, rhx_keyparams* keyparams)
 			/* generate the round-key buffer with HKDF(HMAC(SHA2-256)) */
 			hkdf256_expand(rk, state->rndkeylen * sizeof(__m128i), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen);
 			/* convert the bytes to little endian encoded 128-bit integers */
-			bytes_to_le128(rk, state->rndkeylen * sizeof(__m128i), state->roundkeys, state->rndkeylen);
+			le128to8(rk, state->rndkeylen * sizeof(__m128i), state->roundkeys, state->rndkeylen);
 		}
 		else
 		{
@@ -303,7 +295,7 @@ static void secure_expand(rhx_state* state, rhx_keyparams* keyparams)
 			/* generate the round-key buffer with HKDF(HMAC(SHA2-512)) */
 			hkdf512_expand(rk, state->rndkeylen * sizeof(__m128i), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen);
 			/* convert the bytes to little endian encoded 128-bit integers */
-			bytes_to_le128(rk, state->rndkeylen * sizeof(__m128i), state->roundkeys, state->rndkeylen);
+			le128to8(rk, state->rndkeylen * sizeof(__m128i), state->roundkeys, state->rndkeylen);
 		}
 #endif
 
@@ -312,7 +304,7 @@ static void secure_expand(rhx_state* state, rhx_keyparams* keyparams)
 	}
 }
 
-static void standard_expand(rhx_state* state, rhx_keyparams* keyparams)
+static void rhx_standard_expand(rhx_state* state, rhx_keyparams* keyparams)
 {
 	size_t kwords;
 
@@ -324,53 +316,53 @@ static void standard_expand(rhx_state* state, rhx_keyparams* keyparams)
 		state->roundkeys[0] = _mm_loadu_si128((__m128i*)keyparams->key);
 		state->roundkeys[1] = _mm_loadu_si128((__m128i*)(keyparams->key + 16));
 		state->roundkeys[2] = _mm_aeskeygenassist_si128(state->roundkeys[1], 0x01);
-		expand_rot(state->roundkeys, 2, 2);
-		expand_sub(state->roundkeys, 3, 2);
+		rhx_expand_rot(state->roundkeys, 2, 2);
+		rhx_expand_sub(state->roundkeys, 3, 2);
 		state->roundkeys[4] = _mm_aeskeygenassist_si128(state->roundkeys[3], 0x02);
-		expand_rot(state->roundkeys, 4, 2);
-		expand_sub(state->roundkeys, 5, 2);
+		rhx_expand_rot(state->roundkeys, 4, 2);
+		rhx_expand_sub(state->roundkeys, 5, 2);
 		state->roundkeys[6] = _mm_aeskeygenassist_si128(state->roundkeys[5], 0x04);
-		expand_rot(state->roundkeys, 6, 2);
-		expand_sub(state->roundkeys, 7, 2);
+		rhx_expand_rot(state->roundkeys, 6, 2);
+		rhx_expand_sub(state->roundkeys, 7, 2);
 		state->roundkeys[8] = _mm_aeskeygenassist_si128(state->roundkeys[7], 0x08);
-		expand_rot(state->roundkeys, 8, 2);
-		expand_sub(state->roundkeys, 9, 2);
+		rhx_expand_rot(state->roundkeys, 8, 2);
+		rhx_expand_sub(state->roundkeys, 9, 2);
 		state->roundkeys[10] = _mm_aeskeygenassist_si128(state->roundkeys[9], 0x10);
-		expand_rot(state->roundkeys, 10, 2);
-		expand_sub(state->roundkeys, 11, 2);
+		rhx_expand_rot(state->roundkeys, 10, 2);
+		rhx_expand_sub(state->roundkeys, 11, 2);
 		state->roundkeys[12] = _mm_aeskeygenassist_si128(state->roundkeys[11], 0x20);
-		expand_rot(state->roundkeys, 12, 2);
-		expand_sub(state->roundkeys, 13, 2);
+		rhx_expand_rot(state->roundkeys, 12, 2);
+		rhx_expand_sub(state->roundkeys, 13, 2);
 		state->roundkeys[14] = _mm_aeskeygenassist_si128(state->roundkeys[13], 0x40);
-		expand_rot(state->roundkeys, 14, 2);
+		rhx_expand_rot(state->roundkeys, 14, 2);
 	}
 	else
 	{
 		state->roundkeys[0] = _mm_loadu_si128((__m128i*)keyparams->key);
 		state->roundkeys[1] = _mm_aeskeygenassist_si128(state->roundkeys[0], 0x01);
-		expand_rot(state->roundkeys, 1, 1);
+		rhx_expand_rot(state->roundkeys, 1, 1);
 		state->roundkeys[2] = _mm_aeskeygenassist_si128(state->roundkeys[1], 0x02);
-		expand_rot(state->roundkeys, 2, 1);
+		rhx_expand_rot(state->roundkeys, 2, 1);
 		state->roundkeys[3] = _mm_aeskeygenassist_si128(state->roundkeys[2], 0x04);
-		expand_rot(state->roundkeys, 3, 1);
+		rhx_expand_rot(state->roundkeys, 3, 1);
 		state->roundkeys[4] = _mm_aeskeygenassist_si128(state->roundkeys[3], 0x08);
-		expand_rot(state->roundkeys, 4, 1);
+		rhx_expand_rot(state->roundkeys, 4, 1);
 		state->roundkeys[5] = _mm_aeskeygenassist_si128(state->roundkeys[4], 0x10);
-		expand_rot(state->roundkeys, 5, 1);
+		rhx_expand_rot(state->roundkeys, 5, 1);
 		state->roundkeys[6] = _mm_aeskeygenassist_si128(state->roundkeys[5], 0x20);
-		expand_rot(state->roundkeys, 6, 1);
+		rhx_expand_rot(state->roundkeys, 6, 1);
 		state->roundkeys[7] = _mm_aeskeygenassist_si128(state->roundkeys[6], 0x40);
-		expand_rot(state->roundkeys, 7, 1);
+		rhx_expand_rot(state->roundkeys, 7, 1);
 		state->roundkeys[8] = _mm_aeskeygenassist_si128(state->roundkeys[7], 0x80);
-		expand_rot(state->roundkeys, 8, 1);
+		rhx_expand_rot(state->roundkeys, 8, 1);
 		state->roundkeys[9] = _mm_aeskeygenassist_si128(state->roundkeys[8], 0x1B);
-		expand_rot(state->roundkeys, 9, 1);
+		rhx_expand_rot(state->roundkeys, 9, 1);
 		state->roundkeys[10] = _mm_aeskeygenassist_si128(state->roundkeys[9], 0x36);
-		expand_rot(state->roundkeys, 10, 1);
+		rhx_expand_rot(state->roundkeys, 10, 1);
 	}
 }
 
-bool rhx_initialize(rhx_state* state, const rhx_keyparams* keyparams, bool encryption, cipher_type ctype)
+bool rhx_initialize(rhx_state* state, const rhx_keyparams* keyparams, bool encryption, rhx_cipher_type ctype)
 {
 	/* null or illegal state values */
 	assert(state->roundkeys != NULL);
@@ -396,7 +388,7 @@ bool rhx_initialize(rhx_state* state, const rhx_keyparams* keyparams, bool encry
 			state->rndkeylen = RHX256_ROUNDKEY_SIZE;
 			state->roundkeys = rkeys;
 			state->rounds = 22;
-			secure_expand(state, keyparams);
+			rhx_secure_expand(state, keyparams);
 			res = true;
 		}
 	}
@@ -410,7 +402,7 @@ bool rhx_initialize(rhx_state* state, const rhx_keyparams* keyparams, bool encry
 			state->rndkeylen = RHX512_ROUNDKEY_SIZE;
 			state->roundkeys = rkeys;
 			state->rounds = 30;
-			secure_expand(state, keyparams);
+			rhx_secure_expand(state, keyparams);
 			res = true;
 		}
 	}
@@ -424,7 +416,7 @@ bool rhx_initialize(rhx_state* state, const rhx_keyparams* keyparams, bool encry
 			state->rndkeylen = AES256_ROUNDKEY_SIZE;
 			state->roundkeys = rkeys;
 			state->rounds = 14;
-			standard_expand(state, keyparams);
+			rhx_standard_expand(state, keyparams);
 			res = true;
 		}
 	}
@@ -438,7 +430,7 @@ bool rhx_initialize(rhx_state* state, const rhx_keyparams* keyparams, bool encry
 			state->rndkeylen = AES128_ROUNDKEY_SIZE;
 			state->roundkeys = rkeys;
 			state->rounds = 10;
-			standard_expand(state, keyparams);
+			rhx_standard_expand(state, keyparams);
 			res = true;
 		}
 	}
@@ -521,7 +513,7 @@ static const uint32_t rcon[30] =
 	0xD4000000UL, 0xB3000000UL, 0x7D000000UL, 0xFA000000UL, 0xEF000000UL, 0xC5000000UL
 };
 
-static void add_round_key(uint8_t* state, const uint32_t *skeys)
+static void rhx_addround_key(uint8_t* state, const uint32_t *skeys)
 {
 	size_t i;
 	uint32_t k;
@@ -537,7 +529,7 @@ static void add_round_key(uint8_t* state, const uint32_t *skeys)
 	}
 }
 
-static uint8_t gf256red(uint32_t x)
+static uint8_t rhx_gf256_reduce(uint32_t x)
 {
 	uint32_t y;
 
@@ -546,7 +538,7 @@ static uint8_t gf256red(uint32_t x)
 	return (x ^ y ^ (y << 1) ^ (y << 3) ^ (y << 4)) & 0xFF;
 }
 
-static void inv_mix_columns(uint8_t* state)
+static void rhx_invmix_columns(uint8_t* state)
 {
 	size_t i;
 	uint32_t s0;
@@ -577,14 +569,14 @@ static void inv_mix_columns(uint8_t* state)
 		t3 = s0 ^ (s0 << 1) ^ (s0 << 3) ^ s1 ^ (s1 << 2) ^ (s1 << 3)
 			^ s2 ^ (s2 << 3) ^ (s3 << 1) ^ (s3 << 2) ^ (s3 << 3);
 
-		state[i] = gf256red(t0);
-		state[i + 1] = gf256red(t1);
-		state[i + 2] = gf256red(t2);
-		state[i + 3] = gf256red(t3);
+		state[i] = rhx_gf256_reduce(t0);
+		state[i + 1] = rhx_gf256_reduce(t1);
+		state[i + 2] = rhx_gf256_reduce(t2);
+		state[i + 3] = rhx_gf256_reduce(t3);
 	}
 }
 
-static void inv_shift_rows(uint8_t* state)
+static void rhx_invshift_rows(uint8_t* state)
 {
 	uint8_t tmp;
 
@@ -608,7 +600,7 @@ static void inv_shift_rows(uint8_t* state)
 	state[15] = tmp;
 }
 
-static void inv_sub_bytes(uint8_t* state)
+static void rhx_invsub_bytes(uint8_t* state)
 {
 	size_t i;
 
@@ -618,7 +610,7 @@ static void inv_sub_bytes(uint8_t* state)
 	}
 }
 
-static void mix_columns(uint8_t* state)
+static void rhx_mix_columns(uint8_t* state)
 {
 	size_t i;
 	uint32_t s0;
@@ -649,7 +641,7 @@ static void mix_columns(uint8_t* state)
 	}
 }
 
-static void shift_rows(uint8_t* state)
+static void rhx_shift_rows(uint8_t* state)
 {
 	uint8_t tmp;
 
@@ -673,7 +665,7 @@ static void shift_rows(uint8_t* state)
 	state[3] = tmp;
 }
 
-static void sub_bytes(uint8_t* state, const uint8_t* sbox)
+static void rhx_sub_bytes(uint8_t* state, const uint8_t* sbox)
 {
 	size_t i;
 
@@ -683,7 +675,7 @@ static void sub_bytes(uint8_t* state, const uint8_t* sbox)
 	}
 }
 
-static uint32_t sub_word(uint32_t rot)
+static uint32_t rhx_substitution(uint32_t rot)
 {
 	uint32_t val;
 	uint32_t res;
@@ -699,7 +691,7 @@ static uint32_t sub_word(uint32_t rot)
 	return res | ((uint32_t)(s_box[val]) << 24);
 }
 
-static void decrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input)
+static void rhx_decrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input)
 {
 	const uint8_t* buf;
 	uint8_t s[16];
@@ -707,50 +699,50 @@ static void decrypt_block(rhx_state* state, uint8_t* output, const uint8_t* inpu
 
 	buf = input;
 	memcpy(s, buf, RHX_BLOCK_SIZE);
-	add_round_key(s, state->roundkeys + (state->rounds << 2));
+	rhx_addround_key(s, state->roundkeys + (state->rounds << 2));
 
 	for (i = state->rounds - 1; i > 0; i--)
 	{
-		inv_shift_rows(s);
-		inv_sub_bytes(s);
-		add_round_key(s, state->roundkeys + (i << 2));
-		inv_mix_columns(s);
+		rhx_invshift_rows(s);
+		rhx_invsub_bytes(s);
+		rhx_addround_key(s, state->roundkeys + (i << 2));
+		rhx_invmix_columns(s);
 	}
 
-	inv_shift_rows(s);
-	inv_sub_bytes(s);
-	add_round_key(s, state->roundkeys);
+	rhx_invshift_rows(s);
+	rhx_invsub_bytes(s);
+	rhx_addround_key(s, state->roundkeys);
 	memcpy(output, s, RHX_BLOCK_SIZE);
 }
 
-static void encrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input)
+static void rhx_encrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input)
 {
 	uint8_t buf[RHX_BLOCK_SIZE];
 	size_t i;
 
 	memcpy(buf, input, RHX_BLOCK_SIZE);
-	add_round_key(buf, state->roundkeys);
+	rhx_addround_key(buf, state->roundkeys);
 
 	for (i = 1; i < state->rounds; ++i)
 	{
-		sub_bytes(buf, s_box);
-		shift_rows(buf);
-		mix_columns(buf);
-		add_round_key(buf, state->roundkeys + (i << 2));
+		rhx_sub_bytes(buf, s_box);
+		rhx_shift_rows(buf);
+		rhx_mix_columns(buf);
+		rhx_addround_key(buf, state->roundkeys + (i << 2));
 	}
 
-	sub_bytes(buf, s_box);
-	shift_rows(buf);
-	add_round_key(buf, state->roundkeys + (state->rounds << 2));
+	rhx_sub_bytes(buf, s_box);
+	rhx_shift_rows(buf);
+	rhx_addround_key(buf, state->roundkeys + (state->rounds << 2));
 	memcpy(output, buf, RHX_BLOCK_SIZE);
 }
 
-static void expand_rot(uint32_t* key, uint32_t keyindex, uint32_t keyoffset, uint32_t rconindex)
+static void rhx_expand_rot(uint32_t* key, uint32_t keyindex, uint32_t keyoffset, uint32_t rconindex)
 {
 	uint32_t subkey;
 
 	subkey = keyindex - keyoffset;
-	key[keyindex] = key[subkey] ^ sub_word((uint32_t)(key[keyindex - 1] << 8) | (uint32_t)(key[keyindex - 1] >> 24) & 0xFF) ^ rcon[rconindex];
+	key[keyindex] = key[subkey] ^ rhx_substitution((uint32_t)(key[keyindex - 1] << 8) | (uint32_t)(key[keyindex - 1] >> 24) & 0xFF) ^ rcon[rconindex];
 	++keyindex;
 	++subkey;
 	key[keyindex] = key[subkey] ^ key[keyindex - 1];
@@ -762,12 +754,12 @@ static void expand_rot(uint32_t* key, uint32_t keyindex, uint32_t keyoffset, uin
 	key[keyindex] = key[subkey] ^ key[keyindex - 1];
 }
 
-static void expand_sub(uint32_t* key, uint32_t keyindex, uint32_t keyoffset)
+static void rhx_expand_sub(uint32_t* key, uint32_t keyindex, uint32_t keyoffset)
 {
 	uint32_t subkey;
 
 	subkey = keyindex - keyoffset;
-	key[keyindex] = sub_word(key[keyindex - 1]) ^ key[subkey];
+	key[keyindex] = rhx_substitution(key[keyindex - 1]) ^ key[subkey];
 	++keyindex;
 	++subkey;
 	key[keyindex] = key[subkey] ^ key[keyindex - 1];
@@ -779,30 +771,30 @@ static void expand_sub(uint32_t* key, uint32_t keyindex, uint32_t keyoffset)
 	key[keyindex] = key[subkey] ^ key[keyindex - 1];
 }
 
-static void prefetch_sbox(bool encryption)
+static void rhx_prefetch_sbox(bool encryption)
 {
 	size_t i;
-	volatile uint32_t dummy;
+	volatile uint32_t dmy;
 
-	dummy = 0;
+	dmy = 0;
 
 	if (encryption)
 	{
 		for (i = 0; i < 256; ++i)
 		{
-			dummy += s_box[i];
+			dmy += s_box[i];
 		}
 	}
 	else
 	{
 		for (i = 0; i < 256; ++i)
 		{
-			dummy += is_box[i];
+			dmy += is_box[i];
 		}
 	}
 }
 
-static void secure_expand(rhx_state* state, const rhx_keyparams* keyparams)
+static void rhx_secure_expand(rhx_state* state, const rhx_keyparams* keyparams)
 {
 	uint8_t* tmpi;
 	uint16_t kblen;
@@ -876,7 +868,7 @@ static void secure_expand(rhx_state* state, const rhx_keyparams* keyparams)
 	}
 }
 
-static void standard_expand(rhx_state* state, const rhx_keyparams* keyparams)
+static void rhx_standard_expand(rhx_state* state, const rhx_keyparams* keyparams)
 {
 	/* key in 32 bit words */
 	size_t kwords;
@@ -895,19 +887,19 @@ static void standard_expand(rhx_state* state, const rhx_keyparams* keyparams)
 		state->roundkeys[7] = be8to32(keyparams->key + 28);
 
 		/* k256 r: 8,16,24,32,40,48,56 s: 12,20,28,36,44,52 */
-		expand_rot(state->roundkeys, 8, 8, 1);
-		expand_sub(state->roundkeys, 12, 8);
-		expand_rot(state->roundkeys, 16, 8, 2);
-		expand_sub(state->roundkeys, 20, 8);
-		expand_rot(state->roundkeys, 24, 8, 3);
-		expand_sub(state->roundkeys, 28, 8);
-		expand_rot(state->roundkeys, 32, 8, 4);
-		expand_sub(state->roundkeys, 36, 8);
-		expand_rot(state->roundkeys, 40, 8, 5);
-		expand_sub(state->roundkeys, 44, 8);
-		expand_rot(state->roundkeys, 48, 8, 6);
-		expand_sub(state->roundkeys, 52, 8);
-		expand_rot(state->roundkeys, 56, 8, 7);
+		rhx_expand_rot(state->roundkeys, 8, 8, 1);
+		rhx_expand_sub(state->roundkeys, 12, 8);
+		rhx_expand_rot(state->roundkeys, 16, 8, 2);
+		rhx_expand_sub(state->roundkeys, 20, 8);
+		rhx_expand_rot(state->roundkeys, 24, 8, 3);
+		rhx_expand_sub(state->roundkeys, 28, 8);
+		rhx_expand_rot(state->roundkeys, 32, 8, 4);
+		rhx_expand_sub(state->roundkeys, 36, 8);
+		rhx_expand_rot(state->roundkeys, 40, 8, 5);
+		rhx_expand_sub(state->roundkeys, 44, 8);
+		rhx_expand_rot(state->roundkeys, 48, 8, 6);
+		rhx_expand_sub(state->roundkeys, 52, 8);
+		rhx_expand_rot(state->roundkeys, 56, 8, 7);
 	}
 	else
 	{
@@ -917,20 +909,20 @@ static void standard_expand(rhx_state* state, const rhx_keyparams* keyparams)
 		state->roundkeys[3] = be8to32(keyparams->key + 12);
 
 		/* k128 r: 4,8,12,16,20,24,28,32,36,40 */
-		expand_rot(state->roundkeys, 4, 4, 1);
-		expand_rot(state->roundkeys, 8, 4, 2);
-		expand_rot(state->roundkeys, 12, 4, 3);
-		expand_rot(state->roundkeys, 16, 4, 4);
-		expand_rot(state->roundkeys, 20, 4, 5);
-		expand_rot(state->roundkeys, 24, 4, 6);
-		expand_rot(state->roundkeys, 28, 4, 7);
-		expand_rot(state->roundkeys, 32, 4, 8);
-		expand_rot(state->roundkeys, 36, 4, 9);
-		expand_rot(state->roundkeys, 40, 4, 10);
+		rhx_expand_rot(state->roundkeys, 4, 4, 1);
+		rhx_expand_rot(state->roundkeys, 8, 4, 2);
+		rhx_expand_rot(state->roundkeys, 12, 4, 3);
+		rhx_expand_rot(state->roundkeys, 16, 4, 4);
+		rhx_expand_rot(state->roundkeys, 20, 4, 5);
+		rhx_expand_rot(state->roundkeys, 24, 4, 6);
+		rhx_expand_rot(state->roundkeys, 28, 4, 7);
+		rhx_expand_rot(state->roundkeys, 32, 4, 8);
+		rhx_expand_rot(state->roundkeys, 36, 4, 9);
+		rhx_expand_rot(state->roundkeys, 40, 4, 10);
 	}
 }
 
-bool rhx_initialize(rhx_state* state, const rhx_keyparams* keyparams, bool encryption, cipher_type ctype)
+bool rhx_initialize(rhx_state* state, const rhx_keyparams* keyparams, bool encryption, rhx_cipher_type ctype)
 {
 	/* null or illegal state values */
 	assert(state->roundkeys != NULL);
@@ -956,7 +948,7 @@ bool rhx_initialize(rhx_state* state, const rhx_keyparams* keyparams, bool encry
 			state->rndkeylen = RHX256_ROUNDKEY_SIZE;
 			state->roundkeys = rkeys;
 			state->rounds = 22;
-			secure_expand(state, keyparams);
+			rhx_secure_expand(state, keyparams);
 			res = true;
 		}
 	}
@@ -970,7 +962,7 @@ bool rhx_initialize(rhx_state* state, const rhx_keyparams* keyparams, bool encry
 			state->rndkeylen = RHX512_ROUNDKEY_SIZE;
 			state->roundkeys = rkeys;
 			state->rounds = 30;
-			secure_expand(state, keyparams);
+			rhx_secure_expand(state, keyparams);
 			res = true;
 		}
 	}
@@ -984,7 +976,7 @@ bool rhx_initialize(rhx_state* state, const rhx_keyparams* keyparams, bool encry
 			state->rndkeylen = AES256_ROUNDKEY_SIZE;
 			state->roundkeys = rkeys;
 			state->rounds = 14;
-			standard_expand(state, keyparams);
+			rhx_standard_expand(state, keyparams);
 			res = true;
 		}
 	}
@@ -998,7 +990,7 @@ bool rhx_initialize(rhx_state* state, const rhx_keyparams* keyparams, bool encry
 			state->rndkeylen = AES128_ROUNDKEY_SIZE;
 			state->roundkeys = rkeys;
 			state->rounds = 10;
-			standard_expand(state, keyparams);
+			rhx_standard_expand(state, keyparams);
 			res = true;
 		}
 	}
@@ -1099,7 +1091,7 @@ void rhx_cbc_decrypt_block(rhx_state* state, uint8_t* output, const uint8_t* inp
 	uint8_t tmpv[RHX_BLOCK_SIZE] = { 0 };
 
 	memcpy(tmpv, input, RHX_BLOCK_SIZE);
-	decrypt_block(state, output, input);
+	rhx_decrypt_block(state, output, input);
 
 	for (i = 0; i < RHX_BLOCK_SIZE; ++i)
 	{
@@ -1122,7 +1114,7 @@ void rhx_cbc_encrypt_block(rhx_state* state, uint8_t* output, const uint8_t* inp
 		state->nonce[i] ^= input[i];
 	}
 
-	encrypt_block(state, output, state->nonce);
+	rhx_encrypt_block(state, output, state->nonce);
 	memcpy(state->nonce, output, RHX_BLOCK_SIZE);
 }
 
@@ -1188,7 +1180,7 @@ void rhx_ctr_transform(rhx_state* state, uint8_t* output, const uint8_t* input, 
 
 	while (inputlen >= RHX_BLOCK_SIZE)
 	{
-		encrypt_block(state, output + poff, state->nonce);
+		rhx_encrypt_block(state, output + poff, state->nonce);
 
 		for (i = 0; i < RHX_BLOCK_SIZE; ++i)
 		{
@@ -1205,7 +1197,7 @@ void rhx_ctr_transform(rhx_state* state, uint8_t* output, const uint8_t* input, 
 	{
 		uint8_t tmpb[RHX_BLOCK_SIZE] = { 0 };
 
-		encrypt_block(state, tmpb, state->nonce);
+		rhx_encrypt_block(state, tmpb, state->nonce);
 
 		for (i = 0; i < inputlen; ++i)
 		{
@@ -1224,7 +1216,7 @@ void rhx_ecb_decrypt_block(rhx_state* state, uint8_t* output, const uint8_t* inp
 	assert(input != NULL);
 	assert(output != NULL);
 
-	decrypt_block(state, output, input);
+	rhx_decrypt_block(state, output, input);
 }
 
 void rhx_ecb_encrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input)
@@ -1233,7 +1225,7 @@ void rhx_ecb_encrypt_block(rhx_state* state, uint8_t* output, const uint8_t* inp
 	assert(input != NULL);
 	assert(output != NULL);
 
-	encrypt_block(state, output, input);
+	rhx_encrypt_block(state, output, input);
 }
 
 /* Block-cipher counter mode with Hash Based Authentication, -HBA- AEAD authenticated mode */
@@ -1438,7 +1430,7 @@ static bool hba_rhx256_genkeys(const rhx_keyparams* keyparams, uint8_t* cprk, ui
 #ifdef RHX_SHAKE_EXTENSION
 
 		shake_state shks;
-		uint8_t sbuf[KMAC_256_RATE] = { 0 };
+		uint8_t sbuf[SHAKE_256_RATE] = { 0 };
 
 		clear64(shks.state, SHAKE_STATE_SIZE);
 
@@ -1500,7 +1492,7 @@ static bool hba_rhx512_genkeys(const rhx_keyparams* keyparams, uint8_t* cprk, ui
 
 #ifdef RHX_SHAKE_EXTENSION
 
-		uint8_t sbuf[KMAC_512_RATE] = { 0 };
+		uint8_t sbuf[SHAKE_512_RATE] = { 0 };
 		shake_state shks;
 
 		clear64(shks.state, SHAKE_STATE_SIZE);
@@ -1702,7 +1694,7 @@ bool hba_rhx512_transform(hba_state* state, uint8_t* output, const uint8_t* inpu
 	else
 	{
 		uint8_t code[HBA512_MAC_LENGTH] = { 0 };
-		hba_rhx512_finalize(state, code, input, inputlen, ncopy); //118,201..219
+		hba_rhx512_finalize(state, code, input, inputlen, ncopy);
 
 		/* test the mac for equality, bypassing the transform if the mac check fails */
 		if (verify(code, input + inputlen, HBA512_MAC_LENGTH) == 0)

@@ -3323,7 +3323,7 @@ void kmac128(uint8_t* output, size_t outputlen, const uint8_t* message, size_t m
 	clear64(state.state, KMAC_STATE_SIZE);
 	kmac128_initialize(&state, key, keylen, custom, customlen);
 
-	if (msglen > KMAC_128_RATE)
+	if (msglen >= KMAC_128_RATE)
 	{
 		const size_t rndlen = (msglen / KMAC_128_RATE) * KMAC_128_RATE;
 		kmac128_blockupdate(&state, message, rndlen / KMAC_128_RATE);
@@ -3492,7 +3492,7 @@ void kmac256(uint8_t* output, size_t outputlen, const uint8_t* message, size_t m
 	clear64(state.state, KMAC_STATE_SIZE);
 	kmac256_initialize(&state, key, keylen, custom, customlen);
 
-	if (msglen > KMAC_256_RATE)
+	if (msglen >= KMAC_256_RATE)
 	{
 		const size_t rndlen = (msglen / KMAC_256_RATE) * KMAC_256_RATE;
 		kmac256_blockupdate(&state, message, rndlen / KMAC_256_RATE);
@@ -3662,7 +3662,7 @@ void kmac512(uint8_t* output, size_t outputlen, const uint8_t* message, size_t m
 	clear64(state.state, KMAC_STATE_SIZE);
 	kmac512_initialize(&state, key, keylen, custom, customlen);
 
-	if (msglen > KMAC_512_RATE)
+	if (msglen >= KMAC_512_RATE)
 	{
 		const size_t rndlen = (msglen / KMAC_512_RATE) * KMAC_512_RATE;
 		kmac512_blockupdate(&state, message, rndlen / KMAC_512_RATE);

@@ -9,14 +9,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef RHX_AESNI_ENABLED
-#	if defined(_MSC_VER)
-#		include <intrin.h>
-#	elif defined(__GNUC__)
-#		include <x86intrin.h>
-#	endif
-#endif
-
 static bool aes128_cbc_monte_carlo(const uint8_t* key, const uint8_t* iv, const uint8_t message[4][RHX_BLOCK_SIZE], const uint8_t expected[4][RHX_BLOCK_SIZE])
 {
 	uint8_t ivc[RHX_BLOCK_SIZE] = { 0 };
@@ -1219,9 +1211,8 @@ bool hba_rhx256_stress_test()
 				status = false;
 			}
 
-
 			/* compare decryption output to message */
-			if (are_equal8(dec, msg, sizeof(msg)) == false)
+			if (are_equal8(dec, msg, mlen) == false)
 			{
 				status = false;
 			}
@@ -1313,9 +1304,8 @@ bool hba_rhx512_stress_test()
 				status = false;
 			}
 
-
 			/* compare decryption output to message */
-			if (are_equal8(dec, msg, sizeof(msg)) == false)
+			if (are_equal8(dec, msg, mlen) == false)
 			{
 				status = false;
 			}
