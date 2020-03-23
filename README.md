@@ -43,3 +43,8 @@ SP800-38a: <a href="http://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublic
 Towards post-quantum symmetric cryptography: <a href="https://eprint.iacr.org/2019/553>eAES</a>
 
 Towards Post-Quantum Secure Symmetric Cryptography: <a href="https://eprint.iacr.org/2019/1208>A Mathematical Perspective</a>
+ 
+ ## Disclaimer
+This project contains strong cryptography, before downloading the source files, 
+it is your responsibility to check if the extended symmetric cipher key lengths (512 bit and higher), and other cryptographic algorithms contained in this project are legal in your country. 
+If you use this code, please do so responsibly and in accordance to law in your region.
