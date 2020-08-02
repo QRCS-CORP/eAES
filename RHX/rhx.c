@@ -1,5 +1,6 @@
 #include "rhx.h"
 #include "intutils.h"
+
 #ifdef RHX_SHAKE_EXTENSION
 #	include "sha3.h"
 #else
@@ -133,7 +134,7 @@ static const uint8_t RHX_HKDF512_INFO[7] = { 82, 72, 88, 72, 53, 49, 50 };
 
 static void rhx_decrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input)
 {
-	const size_t RNDCNT = state->rndkeylen - 2;
+	const size_t RNDCNT = state->roundkeylen - 2;
 	__m128i x;
 	size_t keyctr;
 
@@ -153,7 +154,7 @@ static void rhx_decrypt_block(rhx_state* state, uint8_t* output, const uint8_t* 
 
 static void rhx_encrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input)
 {
-	const size_t RNDCNT = state->rndkeylen - 2;
+	const size_t RNDCNT = state->roundkeylen - 2;
 	__m128i x;
 	size_t keyctr;
 
@@ -200,19 +201,20 @@ static le128to8(uint8_t* input, size_t inplen, __m128i* output, size_t outlen)
 	size_t i;
 	uint32_t tmpk;
 
+	// swap endianess
 	for (i = 0; i < inplen; i += sizeof(uint32_t))
 	{
 		tmpk = be8to32(input + i);
-		le32to8(tmpk, input, i);
+		le32to8(input + i, tmpk);
 	}
 
 	for (i = 0; i < outlen; ++i)
 	{
-		output[i] = _mm_loadu_si128((__m128i*)(input + (i * sizeof(__m128i))));
+		output[i] = _mm_loadu_si128((__m128i*)(input + (i * ROUNDKEY_ELEMENT_SIZE)));
 	}
 }
 
-static void rhx_secure_expand(rhx_state* state, rhx_keyparams* keyparams)
+static void rhx_secure_expand(rhx_state* state, const rhx_keyparams* keyparams)
 {
 	uint8_t* tmpi;
 	uint16_t kblen;
@@ -265,18 +267,18 @@ static void rhx_secure_expand(rhx_state* state, rhx_keyparams* keyparams)
 			uint8_t rk[(RHX256_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE)] = { 0 };
 
 			/* generate the round-key buffer with cSHAKE-256 */
-			cshake256(rk, state->rndkeylen * sizeof(__m128i), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen, NULL, 0);
+			cshake256(rk, sizeof(rk), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen, NULL, 0);
 			/* convert the bytes to little endian encoded 128-bit integers */
-			le128to8(rk, state->rndkeylen * sizeof(__m128i), state->roundkeys, state->rndkeylen);
+			le128to8(rk, sizeof(rk), state->roundkeys, state->roundkeylen);
 		}
 		else
 		{
 			uint8_t rk[(RHX512_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE)] = { 0 };
 
 			/* generate the round-key buffer with cSHAKE-512 */
-			cshake512(rk, state->rndkeylen * sizeof(__m128i), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen, NULL, 0);
+			cshake512(rk, sizeof(rk), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen, NULL, 0);
 			/* convert the bytes to little endian encoded 128-bit integers */
-			le128to8(rk, state->rndkeylen * sizeof(__m128i), state->roundkeys, state->rndkeylen);
+			le128to8(rk, sizeof(rk), state->roundkeys, state->roundkeylen);
 		}
 #else
 		if (keyparams->keylen == RHX256_KEY_SIZE)
@@ -284,18 +286,18 @@ static void rhx_secure_expand(rhx_state* state, rhx_keyparams* keyparams)
 			uint8_t rk[RHX256_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE] = { 0 };
 
 			/* generate the round-key buffer with HKDF(HMAC(SHA2-256)) */
-			hkdf256_expand(rk, state->rndkeylen * sizeof(__m128i), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen);
+			hkdf256_expand(rk, sizeof(rk), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen);
 			/* convert the bytes to little endian encoded 128-bit integers */
-			le128to8(rk, state->rndkeylen * sizeof(__m128i), state->roundkeys, state->rndkeylen);
+			le128to8(rk, sizeof(rk), state->roundkeys, state->roundkeylen);
 		}
 		else
 		{
 			uint8_t rk[(RHX512_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE)] = { 0 };
 
 			/* generate the round-key buffer with HKDF(HMAC(SHA2-512)) */
-			hkdf512_expand(rk, state->rndkeylen * sizeof(__m128i), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen);
+			hkdf512_expand(rk, sizeof(rk), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen);
 			/* convert the bytes to little endian encoded 128-bit integers */
-			le128to8(rk, state->rndkeylen * sizeof(__m128i), state->roundkeys, state->rndkeylen);
+			le128to8(rk, sizeof(rk), state->roundkeys, state->roundkeylen);
 		}
 #endif
 
@@ -304,7 +306,7 @@ static void rhx_secure_expand(rhx_state* state, rhx_keyparams* keyparams)
 	}
 }
 
-static void rhx_standard_expand(rhx_state* state, rhx_keyparams* keyparams)
+static void rhx_standard_expand(rhx_state* state, const rhx_keyparams* keyparams)
 {
 	size_t kwords;
 
@@ -362,81 +364,42 @@ static void rhx_standard_expand(rhx_state* state, rhx_keyparams* keyparams)
 	}
 }
 
-bool rhx_initialize(rhx_state* state, const rhx_keyparams* keyparams, bool encryption, rhx_cipher_type ctype)
+void rhx_initialize(rhx_state* state, const rhx_keyparams* keyparams, bool encryption, rhx_cipher_type ctype)
 {
-	/* null or illegal state values */
-	assert(state->roundkeys != NULL);
-	assert(state->rndkeylen != 0);
-
-	__m128i* rkeys;
-	bool res;
-
-	res = false;
-
 	if (keyparams->nonce != NULL)
 	{
 		state->nonce = keyparams->nonce;
 	}
 
+	memset(state->roundkeys, 0x00, sizeof(state->roundkeys));
+	
 	if (ctype == RHX256)
 	{
-		rkeys = (__m128i*)malloc(RHX256_ROUNDKEY_SIZE * sizeof(__m128i));
-
-		if (rkeys != NULL)
-		{
-			memset(rkeys, 0x00, RHX256_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE);
-			state->rndkeylen = RHX256_ROUNDKEY_SIZE;
-			state->roundkeys = rkeys;
-			state->rounds = 22;
-			rhx_secure_expand(state, keyparams);
-			res = true;
-		}
+		state->roundkeylen = RHX256_ROUNDKEY_SIZE;
+		state->rounds = 22;
+		rhx_secure_expand(state, keyparams);
 	}
 	else if (ctype == RHX512)
 	{
-		rkeys = (__m128i*)malloc(RHX512_ROUNDKEY_SIZE * sizeof(__m128i));
-
-		if (rkeys != NULL)
-		{
-			memset(rkeys, 0x00, RHX512_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE);
-			state->rndkeylen = RHX512_ROUNDKEY_SIZE;
-			state->roundkeys = rkeys;
-			state->rounds = 30;
-			rhx_secure_expand(state, keyparams);
-			res = true;
-		}
+		state->roundkeylen = RHX512_ROUNDKEY_SIZE;
+		state->rounds = 30;
+		rhx_secure_expand(state, keyparams);
 	}
 	else if (ctype == AES256)
 	{
-		rkeys = (__m128i*)malloc(AES256_ROUNDKEY_SIZE * sizeof(__m128i));
-
-		if (rkeys != NULL)
-		{
-			memset(rkeys, 0x00, AES256_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE);
-			state->rndkeylen = AES256_ROUNDKEY_SIZE;
-			state->roundkeys = rkeys;
-			state->rounds = 14;
-			rhx_standard_expand(state, keyparams);
-			res = true;
-		}
+		state->roundkeylen = AES256_ROUNDKEY_SIZE;
+		state->rounds = 14;
+		rhx_standard_expand(state, keyparams);
 	}
 	else if (ctype == AES128)
 	{
-		rkeys = (__m128i*)malloc(AES128_ROUNDKEY_SIZE * sizeof(__m128i));
-
-		if (rkeys != NULL)
-		{
-			memset(rkeys, 0x00, AES128_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE);
-			state->rndkeylen = AES128_ROUNDKEY_SIZE;
-			state->roundkeys = rkeys;
-			state->rounds = 10;
-			rhx_standard_expand(state, keyparams);
-			res = true;
-		}
+		state->roundkeylen = AES128_ROUNDKEY_SIZE;
+		state->rounds = 10;
+		rhx_standard_expand(state, keyparams);
 	}
 	else
 	{
-		state->rndkeylen = 0;
+		state->roundkeylen = 0;
 	}
 
 	/* inverse cipher */
@@ -447,10 +410,10 @@ bool rhx_initialize(rhx_state* state, const rhx_keyparams* keyparams, bool encry
 		size_t j;
 
 		tmp = state->roundkeys[0];
-		state->roundkeys[0] = state->roundkeys[state->rndkeylen - 1];
-		state->roundkeys[state->rndkeylen - 1] = tmp;
+		state->roundkeys[0] = state->roundkeys[state->roundkeylen - 1];
+		state->roundkeys[state->roundkeylen - 1] = tmp;
 
-		for (i = 1, j = state->rndkeylen - 2; i < j; ++i, --j)
+		for (i = 1, j = state->roundkeylen - 2; i < j; ++i, --j)
 		{
 			tmp = _mm_aesimc_si128(state->roundkeys[i]);
 			state->roundkeys[i] = _mm_aesimc_si128(state->roundkeys[j]);
@@ -460,6 +423,7 @@ bool rhx_initialize(rhx_state* state, const rhx_keyparams* keyparams, bool encry
 		state->roundkeys[i] = _mm_aesimc_si128(state->roundkeys[i]);
 	}
 }
+
 
 #else
 
@@ -513,7 +477,7 @@ static const uint32_t rcon[30] =
 	0xD4000000UL, 0xB3000000UL, 0x7D000000UL, 0xFA000000UL, 0xEF000000UL, 0xC5000000UL
 };
 
-static void rhx_addround_key(uint8_t* state, const uint32_t *skeys)
+static void rhx_add_roundkey(uint8_t* state, const uint32_t *skeys)
 {
 	size_t i;
 	uint32_t k;
@@ -522,9 +486,9 @@ static void rhx_addround_key(uint8_t* state, const uint32_t *skeys)
 	{
 		k = *skeys;
 		state[i] ^= (uint8_t)(k >> 24);
-		state[i + 1] ^= (uint8_t)(k >> 16) & 0xFF;
-		state[i + 2] ^= (uint8_t)(k >> 8) & 0xFF;
-		state[i + 3] ^= (uint8_t)k & 0xFF;
+		state[i + 1] ^= (uint8_t)(k >> 16) & 0xFFU;
+		state[i + 2] ^= (uint8_t)(k >> 8) & 0xFFU;
+		state[i + 3] ^= (uint8_t)k & 0xFFU;
 		++skeys;
 	}
 }
@@ -535,7 +499,7 @@ static uint8_t rhx_gf256_reduce(uint32_t x)
 
 	y = x >> 8;
 
-	return (x ^ y ^ (y << 1) ^ (y << 3) ^ (y << 4)) & 0xFF;
+	return (x ^ y ^ (y << 1) ^ (y << 3) ^ (y << 4)) & 0xFFU;
 }
 
 static void rhx_invmix_columns(uint8_t* state)
@@ -680,13 +644,13 @@ static uint32_t rhx_substitution(uint32_t rot)
 	uint32_t val;
 	uint32_t res;
 
-	val = rot & 0xFF;
+	val = rot & 0xFFU;
 	res = s_box[val];
-	val = (rot >> 8) & 0xFF;
+	val = (rot >> 8) & 0xFFU;
 	res |= ((uint32_t)s_box[val] << 8);
-	val = (rot >> 16) & 0xFF;
+	val = (rot >> 16) & 0xFFU;
 	res |= ((uint32_t)s_box[val] << 16);
-	val = (rot >> 24) & 0xFF;
+	val = (rot >> 24) & 0xFFU;
 
 	return res | ((uint32_t)(s_box[val]) << 24);
 }
@@ -699,19 +663,19 @@ static void rhx_decrypt_block(rhx_state* state, uint8_t* output, const uint8_t* 
 
 	buf = input;
 	memcpy(s, buf, RHX_BLOCK_SIZE);
-	rhx_addround_key(s, state->roundkeys + (state->rounds << 2));
+	rhx_add_roundkey(s, state->roundkeys + (state->rounds << 2));
 
 	for (i = state->rounds - 1; i > 0; i--)
 	{
 		rhx_invshift_rows(s);
 		rhx_invsub_bytes(s);
-		rhx_addround_key(s, state->roundkeys + (i << 2));
+		rhx_add_roundkey(s, state->roundkeys + (i << 2));
 		rhx_invmix_columns(s);
 	}
 
 	rhx_invshift_rows(s);
 	rhx_invsub_bytes(s);
-	rhx_addround_key(s, state->roundkeys);
+	rhx_add_roundkey(s, state->roundkeys);
 	memcpy(output, s, RHX_BLOCK_SIZE);
 }
 
@@ -721,19 +685,19 @@ static void rhx_encrypt_block(rhx_state* state, uint8_t* output, const uint8_t* 
 	size_t i;
 
 	memcpy(buf, input, RHX_BLOCK_SIZE);
-	rhx_addround_key(buf, state->roundkeys);
+	rhx_add_roundkey(buf, state->roundkeys);
 
 	for (i = 1; i < state->rounds; ++i)
 	{
 		rhx_sub_bytes(buf, s_box);
 		rhx_shift_rows(buf);
 		rhx_mix_columns(buf);
-		rhx_addround_key(buf, state->roundkeys + (i << 2));
+		rhx_add_roundkey(buf, state->roundkeys + (i << 2));
 	}
 
 	rhx_sub_bytes(buf, s_box);
 	rhx_shift_rows(buf);
-	rhx_addround_key(buf, state->roundkeys + (state->rounds << 2));
+	rhx_add_roundkey(buf, state->roundkeys + (state->rounds << 2));
 	memcpy(output, buf, RHX_BLOCK_SIZE);
 }
 
@@ -742,7 +706,7 @@ static void rhx_expand_rot(uint32_t* key, uint32_t keyindex, uint32_t keyoffset,
 	uint32_t subkey;
 
 	subkey = keyindex - keyoffset;
-	key[keyindex] = key[subkey] ^ rhx_substitution((uint32_t)(key[keyindex - 1] << 8) | (uint32_t)(key[keyindex - 1] >> 24) & 0xFF) ^ rcon[rconindex];
+	key[keyindex] = key[subkey] ^ rhx_substitution((uint32_t)(key[keyindex - 1] << 8) | (uint32_t)(key[keyindex - 1] >> 24) & 0xFFU) ^ rcon[rconindex];
 	++keyindex;
 	++subkey;
 	key[keyindex] = key[subkey] ^ key[keyindex - 1];
@@ -846,21 +810,21 @@ static void rhx_secure_expand(rhx_state* state, const rhx_keyparams* keyparams)
 		if (keyparams->keylen == RHX256_KEY_SIZE)
 		{
 			/* info is used as cSHAKE name parameter */
-			cshake256((uint8_t*)state->roundkeys, state->rndkeylen * sizeof(uint32_t), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen, NULL, 0);
+			cshake256((uint8_t*)state->roundkeys, state->roundkeylen * sizeof(uint32_t), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen, NULL, 0);
 		}
 		else
 		{
-			cshake512((uint8_t*)state->roundkeys, state->rndkeylen * sizeof(uint32_t), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen, NULL, 0);
+			cshake512((uint8_t*)state->roundkeys, state->roundkeylen * sizeof(uint32_t), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen, NULL, 0);
 		}
 #else
 		if (keyparams->keylen == RHX256_KEY_SIZE)
 		{
 			/* info is HKDF Expand info parameter */
-			hkdf256_expand((uint8_t*)state->roundkeys, state->rndkeylen * sizeof(uint32_t), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen);
+			hkdf256_expand((uint8_t*)state->roundkeys, state->roundkeylen * sizeof(uint32_t), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen);
 		}
 		else
 		{
-			hkdf512_expand((uint8_t*)state->roundkeys, state->rndkeylen * sizeof(uint32_t), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen);
+			hkdf512_expand((uint8_t*)state->roundkeys, state->roundkeylen * sizeof(uint32_t), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen);
 		}
 #endif
 
@@ -922,86 +886,44 @@ static void rhx_standard_expand(rhx_state* state, const rhx_keyparams* keyparams
 	}
 }
 
-bool rhx_initialize(rhx_state* state, const rhx_keyparams* keyparams, bool encryption, rhx_cipher_type ctype)
+void rhx_initialize(rhx_state* state, const rhx_keyparams* keyparams, bool encryption, rhx_cipher_type ctype)
 {
-	/* null or illegal state values */
-	assert(state->roundkeys != NULL);
-	assert(state->rndkeylen != 0);
-
-	uint32_t* rkeys;
-	bool res;
-
-	res = false;
-
 	if (keyparams->nonce != NULL)
 	{
 		state->nonce = keyparams->nonce;
 	}
 
+	memset(state->roundkeys, 0x00, sizeof(state->roundkeys));
+
 	if (ctype == RHX256)
 	{
-		rkeys = (uint32_t*)malloc(RHX256_ROUNDKEY_SIZE * sizeof(uint32_t));
-
-		if (rkeys != NULL)
-		{
-			memset(rkeys, 0x00, RHX256_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE);
-			state->rndkeylen = RHX256_ROUNDKEY_SIZE;
-			state->roundkeys = rkeys;
-			state->rounds = 22;
-			rhx_secure_expand(state, keyparams);
-			res = true;
-		}
+		state->roundkeylen = RHX256_ROUNDKEY_SIZE;
+		state->rounds = 22;
+		rhx_secure_expand(state, keyparams);
 	}
 	else if (ctype == RHX512)
 	{
-		rkeys = (uint32_t*)malloc(RHX512_ROUNDKEY_SIZE * sizeof(uint32_t));
-
-		if (rkeys != NULL)
-		{
-			memset(rkeys, 0x00, RHX512_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE);
-			state->rndkeylen = RHX512_ROUNDKEY_SIZE;
-			state->roundkeys = rkeys;
-			state->rounds = 30;
-			rhx_secure_expand(state, keyparams);
-			res = true;
-		}
+		state->roundkeylen = RHX512_ROUNDKEY_SIZE;
+		state->rounds = 30;
+		rhx_secure_expand(state, keyparams);
 	}
 	else if (ctype == AES256)
 	{
-		rkeys = (uint32_t*)malloc(AES256_ROUNDKEY_SIZE * sizeof(uint32_t));
-
-		if (rkeys != NULL)
-		{
-			memset(rkeys, 0x00, AES256_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE);
-			state->rndkeylen = AES256_ROUNDKEY_SIZE;
-			state->roundkeys = rkeys;
-			state->rounds = 14;
-			rhx_standard_expand(state, keyparams);
-			res = true;
-		}
+		state->roundkeylen = AES256_ROUNDKEY_SIZE;
+		state->rounds = 14;
+		rhx_standard_expand(state, keyparams);
 	}
 	else if (ctype == AES128)
 	{
-		rkeys = (uint32_t*)malloc(AES128_ROUNDKEY_SIZE * sizeof(uint32_t));
-
-		if (rkeys != NULL)
-		{
-			memset(rkeys, 0x00, AES128_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE);
-			state->rndkeylen = AES128_ROUNDKEY_SIZE;
-			state->roundkeys = rkeys;
-			state->rounds = 10;
-			rhx_standard_expand(state, keyparams);
-			res = true;
-		}
+		state->roundkeylen = AES128_ROUNDKEY_SIZE;
+		state->rounds = 10;
+		rhx_standard_expand(state, keyparams);
 	}
 	else
 	{
 		state->rounds = 0;
-		state->roundkeys = NULL;
-		state->rndkeylen = 0;
+		state->roundkeylen = 0;
 	}
-
-	return res;
 }
 
 #endif
@@ -1010,16 +932,14 @@ void rhx_dispose(rhx_state* state)
 {
 	/* erase the state members */
 
-	if (state != NULL);
+	if (state != NULL)
 	{
 		if (state->roundkeys != NULL)
 		{
-			memset(state->roundkeys, 0x00, state->rndkeylen * ROUNDKEY_ELEMENT_SIZE);
-			free(state->roundkeys);
-			state->roundkeys = NULL;
+			memset(state->roundkeys, 0x00, sizeof(state->roundkeys));
 		}
 
-		state->rndkeylen = 0;
+		state->roundkeylen = 0;
 	}
 }
 
@@ -1230,11 +1150,6 @@ void rhx_ecb_encrypt_block(rhx_state* state, uint8_t* output, const uint8_t* inp
 
 /* Block-cipher counter mode with Hash Based Authentication, -HBA- AEAD authenticated mode */
 
-static const uint8_t hba_version_info[HBA_INFO_LENGTH] =
-{
-	0x48, 0x42, 0x41, 0x20, 0x76, 0x65, 0x72, 0x73, 0x69, 0x6F, 0x6E, 0x20, 0x31, 0x2E, 0x30, 0x62
-};
-
 #ifdef HBA_KMAC_AUTH
 static const uint8_t rhx256_hba_name[HBA_NAME_LENGTH] =
 {
@@ -1319,13 +1234,13 @@ static bool hba_rhx256_finalize(hba_state* state, uint8_t* output, const uint8_t
 		uint8_t mkey[HBA256_MKEY_LENGTH] = { 0 };
 
 #ifdef HBA_KMAC_AUTH
-		cshake256(mkey, HBA256_MKEY_LENGTH, state->mkey, state->mkeylen, tmpn, HBA_NAME_LENGTH, hba_version_info, HBA_INFO_LENGTH);
+		cshake256(mkey, HBA256_MKEY_LENGTH, state->mkey, state->mkeylen, tmpn, HBA_NAME_LENGTH, state->cust, state->custlen);
 		memcpy(state->mkey, mkey, HBA256_MKEY_LENGTH);
 #else
 		/* extract the HKDF key from the state mac-key and salt */
 		hkdf256_extract(mkey, HBA256_MKEY_LENGTH, state->mkey, state->mkeylen, tmpn, HBA_NAME_LENGTH);
 		/* key HKDF Expand and generate the next mac-key to state */
-		hkdf256_expand(state->mkey, state->mkeylen, mkey, HBA256_MKEY_LENGTH, hba_version_info, HBA_INFO_LENGTH);
+		hkdf256_expand(state->mkey, state->mkeylen, mkey, HBA256_MKEY_LENGTH, state->cust, state->custlen);
 #endif
 
 		res = true;
@@ -1390,13 +1305,13 @@ static bool hba_rhx512_finalize(hba_state* state, uint8_t* output, const uint8_t
 		uint8_t mkey[HBA512_MKEY_LENGTH] = { 0 };
 
 #ifdef HBA_KMAC_AUTH
-		cshake512(mkey, HBA512_MKEY_LENGTH, state->mkey, state->mkeylen, tmpn, HBA_NAME_LENGTH, hba_version_info, HBA_INFO_LENGTH);
+		cshake512(mkey, HBA512_MKEY_LENGTH, state->mkey, state->mkeylen, tmpn, HBA_NAME_LENGTH, state->cust, state->custlen);
 		memcpy(state->mkey, mkey, HBA512_MKEY_LENGTH);
 #else
 		/* extract the HKDF key from the state mac-key and salt */
 		hkdf512_extract(mkey, HBA512_MKEY_LENGTH, state->mkey, state->mkeylen, tmpn, HBA_NAME_LENGTH);
 		/* key HKDF Expand and generate the next mac-key to state */
-		hkdf512_expand(state->mkey, state->mkeylen, mkey, HBA512_MKEY_LENGTH, hba_version_info, HBA_INFO_LENGTH);
+		hkdf512_expand(state->mkey, state->mkeylen, mkey, HBA512_MKEY_LENGTH, state->cust, state->custlen);
 #endif
 
 		res = true;
@@ -1405,111 +1320,67 @@ static bool hba_rhx512_finalize(hba_state* state, uint8_t* output, const uint8_t
 	return res;
 }
 
-static bool hba_rhx256_genkeys(const rhx_keyparams* keyparams, uint8_t* cprk, uint8_t* mack)
+static void hba_rhx256_genkeys(const rhx_keyparams* keyparams, uint8_t* cprk, uint8_t* mack)
 {
-	uint8_t* cust;
-	const size_t CLEN = sizeof(hba_version_info) + keyparams->infolen;
-	bool res;
-
-	res = false;
-	cust = (uint8_t*)malloc(CLEN);
-
-	if (cust != NULL)
-	{
-		memset(cust, 0x00, CLEN);
-
-		/* copy hba info to the cSHAKE customization string */
-		memcpy(cust, hba_version_info, HBA_INFO_LENGTH);
-
-		/* copy the user info to custom */
-		if (keyparams->infolen != 0)
-		{
-			memcpy(cust + sizeof(hba_version_info), keyparams->info, keyparams->infolen);
-		}
-
 #ifdef RHX_SHAKE_EXTENSION
 
-		shake_state shks;
-		uint8_t sbuf[SHAKE_256_RATE] = { 0 };
+	keccak_state kstate;
+	uint8_t sbuf[SHAKE_256_RATE] = { 0 };
 
-		clear64(shks.state, SHAKE_STATE_SIZE);
+	clear64(kstate.state, SHAKE_STATE_SIZE);
 
-		/* initialize an instance of cSHAKE */
-		cshake256_initialize(&shks, keyparams->key, keyparams->keylen, rhx256_hba_name, HBA_NAME_LENGTH, cust, CLEN);
-		free(cust);
+	/* initialize an instance of cSHAKE */
+	cshake256_initialize(&kstate, keyparams->key, keyparams->keylen, rhx256_hba_name, HBA_NAME_LENGTH, keyparams->info, keyparams->infolen);
 
-		/* use two permutation calls to seperate the cipher/mac key outputs to match the CEX implementation */
-		cshake256_squeezeblocks(&shks, sbuf, 1);
-		memcpy(cprk, sbuf, keyparams->keylen);
-		cshake256_squeezeblocks(&shks, sbuf, 1);
-		memcpy(mack, sbuf, HBA256_MKEY_LENGTH);
-		/* clear the shake buffer */
-		clear64(shks.state, SHAKE_STATE_SIZE);
+	/* use two permutation calls to seperate the cipher/mac key outputs to match the CEX implementation */
+	cshake256_squeezeblocks(&kstate, sbuf, 1);
+	memcpy(cprk, sbuf, keyparams->keylen);
+	cshake256_squeezeblocks(&kstate, sbuf, 1);
+	memcpy(mack, sbuf, HBA256_MKEY_LENGTH);
+	/* clear the shake buffer */
+	clear64(kstate.state, SHAKE_STATE_SIZE);
+
 #else
 
-		uint8_t kbuf[RHX256_KEY_SIZE + HBA256_MKEY_LENGTH] = { 0 };
-		uint8_t genk[HMAC_256_MAC] = { 0 };
+	uint8_t kbuf[RHX256_KEY_SIZE + HBA256_MKEY_LENGTH] = { 0 };
+	uint8_t genk[HMAC_256_MAC] = { 0 };
 
-		/* extract the HKDF key from the user-key and salt */
-		hkdf256_extract(genk, sizeof(genk), keyparams->key, keyparams->keylen, rhx256_hba_name, HBA_NAME_LENGTH);
+	/* extract the HKDF key from the user-key and salt */
+	hkdf256_extract(genk, sizeof(genk), keyparams->key, keyparams->keylen, rhx256_hba_name, HBA_NAME_LENGTH);
 
-		/* key HKDF Expand and generate the key buffer */
-		hkdf256_expand(kbuf, sizeof(kbuf), genk, sizeof(genk), cust, CLEN);
+	/* key HKDF Expand and generate the key buffer */
+	hkdf256_expand(kbuf, sizeof(kbuf), genk, sizeof(genk), keyparams->info, keyparams->infolen);
 
-		/* copy the cipher and mac keys from the buffer */
-		memcpy(cprk, kbuf, RHX256_KEY_SIZE);
-		memcpy(mack, kbuf + RHX256_KEY_SIZE, HBA256_MKEY_LENGTH);
+	/* copy the cipher and mac keys from the buffer */
+	memcpy(cprk, kbuf, RHX256_KEY_SIZE);
+	memcpy(mack, kbuf + RHX256_KEY_SIZE, HBA256_MKEY_LENGTH);
 
-		/* clear the buffer */
-		memset(kbuf, 0x00, sizeof(kbuf));
+	/* clear the buffer */
+	memset(kbuf, 0x00, sizeof(kbuf));
+
 #endif
-		res = true;
-	}
-
-	return res;
 }
 
-static bool hba_rhx512_genkeys(const rhx_keyparams* keyparams, uint8_t* cprk, uint8_t* mack)
+static void hba_rhx512_genkeys(const rhx_keyparams* keyparams, uint8_t* cprk, uint8_t* mack)
 {
-	uint8_t* cust;
-	const size_t CLEN = sizeof(hba_version_info) + keyparams->infolen;
-	bool res;
-
-	res = false;
-	cust = (uint8_t*)malloc(CLEN);
-
-	if (cust != NULL)
-	{
-		memset(cust, 0x00, CLEN);
-		/* copy hba info to the cSHAKE customization string */
-		memcpy(cust, hba_version_info, HBA_INFO_LENGTH);
-
-		/* copy the user info to custom */
-		if (keyparams->infolen != 0)
-		{
-			memcpy(cust + sizeof(hba_version_info), keyparams->info, keyparams->infolen);
-		}
-
 #ifdef RHX_SHAKE_EXTENSION
 
 		uint8_t sbuf[SHAKE_512_RATE] = { 0 };
-		shake_state shks;
+		keccak_state kstate;
 
-		clear64(shks.state, SHAKE_STATE_SIZE);
+		clear64(kstate.state, SHAKE_STATE_SIZE);
 
 		/* initialize an instance of cSHAKE */
-		cshake512_initialize(&shks, keyparams->key, keyparams->keylen, rhx512_hba_name, HBA_NAME_LENGTH, cust, CLEN);
-		free(cust);
+		cshake512_initialize(&kstate, keyparams->key, keyparams->keylen, rhx512_hba_name, HBA_NAME_LENGTH, keyparams->info, keyparams->infolen);
 		/* use two permutation calls to seperate the cipher/mac key outputs to match the CEX implementation */
-
-		cshake512_squeezeblocks(&shks, sbuf, 1);
+		cshake512_squeezeblocks(&kstate, sbuf, 1);
 		memcpy(cprk, sbuf, keyparams->keylen);
 
-		cshake512_squeezeblocks(&shks, sbuf, 1);
+		cshake512_squeezeblocks(&kstate, sbuf, 1);
 		memcpy(mack, sbuf, HBA512_MKEY_LENGTH);
 
 		/* clear the shake buffer */
-		clear64(shks.state, SHAKE_STATE_SIZE);
+		clear64(kstate.state, SHAKE_STATE_SIZE);
 
 #else
 
@@ -1520,7 +1391,7 @@ static bool hba_rhx512_genkeys(const rhx_keyparams* keyparams, uint8_t* cprk, ui
 		hkdf512_extract(genk, sizeof(genk), keyparams->key, keyparams->keylen, rhx512_hba_name, HBA_NAME_LENGTH);
 
 		/* key HKDF Expand and generate the key buffer */
-		hkdf512_expand(kbuf, sizeof(kbuf), genk, sizeof(genk), cust, CLEN);
+		hkdf512_expand(kbuf, sizeof(kbuf), genk, sizeof(genk), keyparams->info, keyparams->infolen);
 
 		/* copy the cipher and mac keys from the buffer */
 		memcpy(cprk, kbuf, RHX512_KEY_SIZE);
@@ -1529,10 +1400,7 @@ static bool hba_rhx512_genkeys(const rhx_keyparams* keyparams, uint8_t* cprk, ui
 		/* clear the buffer */
 		memset(kbuf, 0x00, sizeof(kbuf));
 #endif
-		res = true;
-	}
 
-	return res;
 }
 
 /* hba common */
@@ -1547,9 +1415,16 @@ void hba_rhx_dispose(hba_state* state)
 {
 	if (state != NULL)
 	{
-		if (&state->cstate != NULL);
+		if (&state->cstate != NULL)
 		{
 			rhx_dispose(&state->cstate);
+		}
+
+		if (state->cust != NULL)
+		{
+			memset(state->cust, 0x00, state->custlen);
+			free(state->cust);
+			state->cust = NULL;
 		}
 
 		if (state->mkey != NULL)
@@ -1561,6 +1436,7 @@ void hba_rhx_dispose(hba_state* state)
 
 		state->aadlen = 0;
 		state->counter = 0;
+		state->custlen = 0;
 		state->mkeylen = 0;
 		state->encrypt = false;
 	}
@@ -1575,10 +1451,16 @@ bool hba_rhx256_initialize(hba_state* state, const rhx_keyparams* keyparams, boo
 	bool res;
 
 	res = false;
-
 	mkey = (uint8_t*)malloc(HBA256_MKEY_LENGTH);
+	state->custlen = keyparams->infolen;
+	state->cust = NULL;
 
-	if (mkey != NULL)
+	if (keyparams->infolen != 0)
+	{
+		state->cust = (uint8_t*)malloc(keyparams->infolen);
+	}
+
+	if (mkey != NULL && (keyparams->infolen == 0 || state->cust != NULL))
 	{
 		/* generate the cipher and mac keys */
 		hba_rhx256_genkeys(keyparams, cprk, mkey);
@@ -1648,8 +1530,15 @@ bool hba_rhx512_initialize(hba_state* state, const rhx_keyparams* keyparams, boo
 
 	res = false;
 	mkey = (uint8_t*)malloc(HBA512_MKEY_LENGTH);
+	state->custlen = keyparams->infolen;
+	state->cust = NULL;
 
-	if (mkey != NULL)
+	if (keyparams->infolen != 0)
+	{
+		state->cust = (uint8_t*)malloc(keyparams->infolen);
+	}
+
+	if (mkey != NULL && (keyparams->infolen == 0 || state->cust != NULL))
 	{
 		/* generate the cipher and mac keys */
 		hba_rhx512_genkeys(keyparams, cprk, mkey);

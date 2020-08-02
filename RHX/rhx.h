@@ -1,4 +1,4 @@
-/* The GPL version 3 License (GPLv3)
+ /* The GPL version 3 License (GPLv3)
 * 
 * Copyright (c) 2020 vtdev.com
 * This file is part of the CEX Cryptographic library.
@@ -220,16 +220,16 @@ typedef enum
 * Just for testing, add the RHX_AESNI_ENABLED preprocessor definition and enable SIMD and AES-NI.
 */
 #ifndef RHX_AESNI_ENABLED
-//#	define RHX_AESNI_ENABLED
+#	define RHX_AESNI_ENABLED
 #endif 
 
-#ifdef RHX_AESNI_ENABLED
-#	if defined(_MSC_VER)
+#if defined(RHX_AESNI_ENABLED)
+#	if defined(QSC_COMPILER_MSC)
 #		include <intrin.h>
-#	elif defined(__GNUC__)
+#		include <wmmintrin.h>
+#	elif defined(QSC_COMPILER_GCC)
 #		include <x86intrin.h>
 #	endif
-#	include <wmmintrin.h>
 #endif
 
 /*!
@@ -329,11 +329,11 @@ typedef struct
 typedef struct
 {
 #if defined(RHX_AESNI_ENABLED)
-	__m128i* roundkeys;				/*!< The 128-bit integer round-key array */
+	__m128i roundkeys[31];		/*!< The 128-bit intel integer round-key array */
 #else
-	uint32_t* roundkeys;			/*!< The round-keys 32-bit subkey array */
+	uint32_t roundkeys[124];		/*!< The round-keys 32-bit subkey array */
 #endif
-	size_t rndkeylen;				/*!< The round-key array length */
+	size_t roundkeylen;				/*!< The round-key array length */
 	size_t rounds;					/*!< The number of transformation rounds */
 	uint8_t* nonce;					/*!< The nonce or initialization vector */
 } rhx_state;
@@ -355,7 +355,7 @@ void rhx_dispose(rhx_state* state);
 *
 * \warning When using a CTR mode, the cipher is always initialized for encryption.
 */
-bool rhx_initialize(rhx_state* state, const rhx_keyparams* keyparams, bool encryption, rhx_cipher_type ctype);
+void rhx_initialize(rhx_state* state, const rhx_keyparams* keyparams, bool encryption, rhx_cipher_type ctype);
 
 /* cbc mode */
 
@@ -476,7 +476,9 @@ typedef struct
 	uint64_t counter;	/*!< the processed bytes counter */
 	uint8_t* mkey;		/*!< the mac generators key array */
 	size_t mkeylen;		/*!< the mac key array length */
-	const uint8_t* aad;		/*!< the additional data array */
+	uint8_t* cust;		/*!< the ciphers custom key */
+	size_t custlen;		/*!< the custom key array length */
+	const uint8_t* aad;	/*!< the additional data array */
 	size_t aadlen;		/*!< the additional data array length */
 	bool encrypt;		/*!< the transformation mode; true for encryption */
 } hba_state;
