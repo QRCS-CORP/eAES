@@ -1,5 +1,5 @@
 # eAES
- The RHX symmetric cipher (eAES)
+## The RHX symmetric cipher (eAES)
 The RHX (Rijndael Hash eXtension) cipher, is a hybrid of Rijndael (AES) and a cryptographically strong pseudo-random generator function.
 The cryptographic KDF, is used to generate the round keys for the Rijndael rounds function, enabling the safe addition of increased mixing rounds, 
 and replacing the differentially-weak native Rijndael key-schedule expansion function.
@@ -24,7 +24,9 @@ and the size of the key in bits, as a 16-bit Little Endian integer, ex. RHX usin
 The info parameter can be tweaked, using a user defined string. This tweak can be used as a secondary 'domain key', 
 or to differentiate cipher-text output from other implementations.
 
-Implementation
+## Implementation
+This implementation uses a base reference code, or AVX implementations of the cipher. For best performance, set the project properties to the highest available SIMD instruction set supported by your CPU. AVX-512 instructions are fully supported in this implementation and offer the best performance profile.
+
 The base cipher, Rijndael, and the extended form of the cipher, can operate using one of the four provided cipher modes of operation:
 Block cipher counter mode with Hash Based Authentication (HBA),
 an AEAD mode that uses KMAC or HMAC to authenticate a cipher-text.
@@ -44,7 +46,7 @@ Towards post-quantum symmetric cryptography: <a href="https://eprint.iacr.org/20
 
 Towards Post-Quantum Secure Symmetric Cryptography: <a href="https://eprint.iacr.org/2019/1208>A Mathematical Perspective</a>
  
- ## Disclaimer
+## Disclaimer
 This project contains strong cryptography, before downloading the source files, 
 it is your responsibility to check if the extended symmetric cipher key lengths (512 bit and higher), and other cryptographic algorithms contained in this project are legal in your country. 
 If you use this code, please do so responsibly and in accordance to law in your region.

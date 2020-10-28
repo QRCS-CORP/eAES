@@ -1,0 +1,81 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="aesavs_test.c">
+      <Filter>Source Files\Test</Filter>
+    </ClCompile>
+    <ClCompile Include="filetools.c">
+      <Filter>Source Files\Common</Filter>
+    </ClCompile>
+    <ClCompile Include="testutils.c">
+      <Filter>Source Files\Common</Filter>
+    </ClCompile>
+    <ClCompile Include="sha2_test.c">
+      <Filter>Source Files\Test</Filter>
+    </ClCompile>
+    <ClCompile Include="sha3_test.c">
+      <Filter>Source Files\Test</Filter>
+    </ClCompile>
+    <ClCompile Include="rhx_main.c">
+      <Filter>Source Files\Test</Filter>
+    </ClCompile>
+    <ClCompile Include="rhx_test.c">
+      <Filter>Source Files\Test</Filter>
+    </ClCompile>
+    <ClCompile Include="timer.c">
+      <Filter>Source Files\Common</Filter>
+    </ClCompile>
+    <ClCompile Include="cipher_speed.c">
+      <Filter>Source Files\Test</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="filetools.h">
+      <Filter>Header Files\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="testutils.h">
+      <Filter>Header Files\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="aesavs_test.h">
+      <Filter>Header Files\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="common.h">
+      <Filter>Header Files\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="sha2_test.h">
+      <Filter>Header Files\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="sha3_test.h">
+      <Filter>Header Files\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="rhx_test.h">
+      <Filter>Header Files\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="timer.h">
+      <Filter>Header Files\Common</Filter>
+    </ClInclude>
+    <ClInclude Include="cipher_speed.h">
+      <Filter>Header Files\Test</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{5537fa18-3c26-494c-9b03-49f1c91760f0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{f4b99147-8c1b-4512-be15-7a730f640646}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Common">
+      <UniqueIdentifier>{2c5bfa61-de19-4ffe-976c-0e0622892be8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Test">
+      <UniqueIdentifier>{388bc85c-5a16-4fa8-a5b0-c53cc8a090ad}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Test">
+      <UniqueIdentifier>{5777cbd0-a9aa-44d5-83e5-469413363332}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Common">
+      <UniqueIdentifier>{6ef273a1-b0a6-4cfb-ac18-fbb60d6c2c73}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
