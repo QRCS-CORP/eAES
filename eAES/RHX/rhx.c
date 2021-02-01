@@ -417,6 +417,9 @@ static void rhx_standard_expand(qsc_rhx_state* state, const qsc_rhx_keyparams* k
 
 void qsc_rhx_initialize(qsc_rhx_state* state, const qsc_rhx_keyparams* keyparams, bool encryption, qsc_rhx_cipher_type ctype)
 {
+	assert(state != NULL);
+	assert(keyparams != NULL);
+
 	if (keyparams->nonce != NULL)
 	{
 		state->nonce = keyparams->nonce;
@@ -659,6 +662,7 @@ void qsc_rhx_cbc_encrypt_block(qsc_rhx_state* state, uint8_t* output, const uint
 }
 
 /* ctr mode */
+
 static void encryption_test()
 {
 	uint8_t msg[AVX512_BLOCK_SIZE] = { 0 };
@@ -912,6 +916,8 @@ void qsc_rhx_ecb_encrypt_block(qsc_rhx_state* state, uint8_t* output, const uint
 
 void qsc_rhx_dispose(qsc_rhx_state* state)
 {
+	assert(state != NULL);
+
 	/* erase the state members */
 
 	if (state != NULL)
@@ -1384,6 +1390,9 @@ static void rhx_standard_expand(qsc_rhx_state* state, const qsc_rhx_keyparams* k
 
 void qsc_rhx_initialize(qsc_rhx_state* state, const qsc_rhx_keyparams* keyparams, bool encryption, qsc_rhx_cipher_type ctype)
 {
+	assert(state != NULL);
+	assert(keyparams != NULL);
+
 	if (keyparams->nonce != NULL)
 	{
 		state->nonce = keyparams->nonce;
@@ -1624,6 +1633,8 @@ void qsc_rhx_ecb_encrypt_block(qsc_rhx_state* state, uint8_t* output, const uint
 
 void qsc_rhx_dispose(qsc_rhx_state* state)
 {
+	assert(state != NULL);
+
 	/* erase the state members */
 
 	if (state != NULL)
@@ -1646,16 +1657,16 @@ void qsc_pkcs7_add_padding(uint8_t* input, size_t length)
 	assert(input != NULL);
 
 	const size_t PADOFT = QSC_RHX_BLOCK_SIZE - length;
-	size_t ctr;
 	uint8_t code;
+	uint8_t cond;
+	size_t i;
 
 	code = (uint8_t)length;
-	ctr = PADOFT;
 
-	while (ctr != QSC_RHX_BLOCK_SIZE)
+	for (i = 0; i < QSC_RHX_BLOCK_SIZE; ++i)
 	{
-		input[ctr] = code;
-		++ctr;
+		cond = i >= PADOFT ? 0xFF : 0x00;
+		input[i] ^= cond & code;
 	}
 }
 
@@ -1663,25 +1674,23 @@ size_t qsc_pkcs7_padding_length(const uint8_t* input)
 {
 	assert(input != NULL);
 
-	size_t count;
-	size_t i;
+	uint8_t code;
+	int32_t i;
+	size_t len;
 
-	count = (size_t)input[QSC_RHX_BLOCK_SIZE - 1];
-	count = (count < QSC_RHX_BLOCK_SIZE) ? count : 0;
+	code = input[QSC_RHX_BLOCK_SIZE - 1];
+	code = (code < QSC_RHX_BLOCK_SIZE) ? code : 0;
+	len = (size_t)code;
 
-	if (count != 0)
+	for (i = 2; i < QSC_RHX_BLOCK_SIZE; ++i)
 	{
-		for (i = 2; i <= count; ++i)
+		if (input[QSC_RHX_BLOCK_SIZE - i] != code && i <= (size_t)code)
 		{
-			if (input[QSC_RHX_BLOCK_SIZE - i] != count)
-			{
-				count = 0;
-				break;
-			}
+			len = 0;
 		}
 	}
 
-	return count;
+	return len;
 }
 
 /* Block-cipher counter mode with Hash Based Authentication, -HBA- AEAD authenticated mode */
@@ -1714,16 +1723,15 @@ static void rhx_hba256_update(qsc_rhx_hba256_state* state, const uint8_t* input,
 static void rhx_hba256_finalize(qsc_rhx_hba256_state* state, uint8_t* output)
 {
 	uint8_t mkey[HBA256_MKEY_LENGTH] = { 0 };
-	uint8_t pctr[sizeof(uint64_t)];
+	uint8_t pctr[sizeof(uint64_t)] = { 0 };
 	uint8_t tmpn[HBA_NAME_LENGTH];
 	uint64_t mctr;
 
-	/* add the nonce, input, and aad sizes to the counter */
-	mctr = QSC_RHX_BLOCK_SIZE + state->counter + state->aadlen + sizeof(uint64_t);
-	/* add the additional data to the mac */
-	rhx_hba256_update(state, state->aad, state->aadlen);
-	/* add the total bytes being processed by the mac  */
+	/* version 1.1a add the nonce, ciphertext, and encoding sizes to the counter */
+	mctr = QSC_RHX_BLOCK_SIZE + state->counter + sizeof(uint64_t);
+	/* convert to little endian bytes  */
 	qsc_intutils_le64to8(pctr, mctr);
+	/* encode with message size, counter, and terminating string sizes */
 	rhx_hba256_update(state, pctr, sizeof(pctr));
 
 #if defined(QSC_HBA_KMAC_AUTH)
@@ -1811,11 +1819,6 @@ void qsc_rhx_hba256_dispose(qsc_rhx_hba256_state* state)
 			qsc_rhx_dispose(&state->cstate);
 		}
 
-		if (state->aad != NULL)
-		{
-			qsc_memutils_clear(state->aad, sizeof(state->aad));
-		}
-
 		if (state->cust != NULL)
 		{
 			qsc_memutils_clear(state->cust, sizeof(state->cust));
@@ -1826,7 +1829,6 @@ void qsc_rhx_hba256_dispose(qsc_rhx_hba256_state* state)
 			qsc_memutils_clear(state->mkey, sizeof(state->mkey));
 		}
 
-		state->aadlen = 0;
 		state->counter = 0;
 		state->custlen = 0;
 		state->encrypt = false;
@@ -1866,17 +1868,23 @@ void qsc_rhx_hba256_initialize(qsc_rhx_hba256_state* state, const qsc_rhx_keypar
 	/* the state counter always initializes at 1 */
 	state->counter = 1;
 	state->encrypt = encrypt;
-	state->aadlen = 0;
 }
 
 void qsc_rhx_hba256_set_associated(qsc_rhx_hba256_state* state, const uint8_t* data, size_t datalen)
 {
-	state->aadlen = qsc_intutils_min(datalen, sizeof(state->aad));
+	assert(state != NULL);
+	assert(data != NULL);
 
-	if (state->aadlen != 0)
+	/* process the additional data */
+	if (datalen != 0)
 	{
-		qsc_memutils_clear(state->aad, sizeof(state->aad));
-		qsc_memutils_copy(state->aad, data, state->aadlen);
+		uint8_t actr[sizeof(uint32_t)] = { 0 };
+
+		/* add the additional data to the mac */
+		rhx_hba256_update(state, data, datalen);
+		/* 1.1a encode with the ad size */
+		qsc_intutils_le32to8(actr, (uint32_t)datalen);
+		rhx_hba256_update(state, actr, sizeof(actr));
 	}
 }
 
@@ -1940,7 +1948,7 @@ static const uint8_t rhx_hba512_name[HBA_NAME_LENGTH] =
 };
 #endif
 
-static void rhx_hba512_update(qsc_rhx_hba512_state* state, uint8_t* input, size_t inputlen)
+static void rhx_hba512_update(qsc_rhx_hba512_state* state, const uint8_t* input, size_t inputlen)
 {
 #if defined(QSC_RHX_SHAKE_EXTENSION)
 	qsc_kmac_update(&state->kstate, QSC_KECCAK_512_RATE, input, inputlen);
@@ -1952,16 +1960,15 @@ static void rhx_hba512_update(qsc_rhx_hba512_state* state, uint8_t* input, size_
 static void rhx_hba512_finalize(qsc_rhx_hba512_state* state, uint8_t* output)
 {
 	uint8_t mkey[HBA512_MKEY_LENGTH] = { 0 };
-	uint8_t pctr[sizeof(uint64_t)];
-	uint8_t tmpn[HBA_NAME_LENGTH];
+	uint8_t pctr[sizeof(uint64_t)] = { 0 };
+	uint8_t tmpn[HBA_NAME_LENGTH] = { 0 };
 	uint64_t mctr;
 
-	/* add the nonce, input, and aad sizes to the counter */
-	mctr = QSC_RHX_BLOCK_SIZE + state->counter + state->aadlen + sizeof(uint64_t);
-	/* add the additional data to the mac */
-	rhx_hba512_update(state, state->aad, state->aadlen);
-	/* add the total bytes being processed by the mac  */
+	/* version 1.1a add the nonce, ciphertext, and encoding sizes to the counter */
+	mctr = QSC_RHX_BLOCK_SIZE + state->counter + sizeof(pctr);
+	/* convert to little endian bytes  */
 	qsc_intutils_le64to8(pctr, mctr);
+	/* encode with cipher-text size, counter, and terminating string lengths */
 	rhx_hba512_update(state, pctr, sizeof(pctr));
 
 #if defined(QSC_HBA_KMAC_AUTH)
@@ -2050,11 +2057,6 @@ void qsc_rhx_hba512_dispose(qsc_rhx_hba512_state* state)
 			qsc_rhx_dispose(&state->cstate);
 		}
 
-		if (state->aad != NULL)
-		{
-			qsc_memutils_clear(state->aad, sizeof(state->aad));
-		}
-
 		if (state->cust != NULL)
 		{
 			qsc_memutils_clear(state->cust, sizeof(state->cust));
@@ -2065,7 +2067,6 @@ void qsc_rhx_hba512_dispose(qsc_rhx_hba512_state* state)
 			qsc_memutils_clear(state->mkey, sizeof(state->mkey));
 		}
 
-		state->aadlen = 0;
 		state->counter = 0;
 		state->custlen = 0;
 		state->encrypt = false;
@@ -2105,17 +2106,23 @@ void qsc_rhx_hba512_initialize(qsc_rhx_hba512_state* state, const qsc_rhx_keypar
 	/* the state counter always initializes at 1 */
 	state->counter = 1;
 	state->encrypt = encrypt;
-	state->aadlen = 0;
 }
 
 void qsc_rhx_hba512_set_associated(qsc_rhx_hba512_state* state, const uint8_t* data, size_t datalen)
 {
-	state->aadlen = qsc_intutils_min(datalen, sizeof(state->aad));
+	assert(state != NULL);
+	assert(data != NULL);
 
-	if (state->aadlen != 0)
+	/* process the additional data */
+	if (datalen != 0)
 	{
-		qsc_memutils_clear(state->aad, sizeof(state->aad));
-		qsc_memutils_copy(state->aad, data, state->aadlen);
+		uint8_t actr[sizeof(uint32_t)] = { 0 };
+
+		/* add the additional data to the mac */
+		rhx_hba512_update(state, data, datalen);
+		/* 1.1a encode with the ad size */
+		qsc_intutils_le32to8(actr, datalen);
+		rhx_hba512_update(state, actr, sizeof(actr));
 	}
 }
 

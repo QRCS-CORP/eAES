@@ -8,7 +8,7 @@
 * The C++ <a href="https://github.com/Steppenwolfe65/CEX">CEX cryptographic library</a>
 * \author John Underhill
 * \date October 12, 2020
-* \updated November 26, 2020
+* \updated December 05, 2020
 */
 
 #ifndef QSCTEST_RHX_TEST_H
@@ -230,6 +230,13 @@ bool qsctest_hba_rhx256_stress();
 * \return Returns true for success
 */
 bool qsctest_hba_rhx512_stress();
+
+/**
+* \brief Tests the padding functions for correct operation.
+*
+* \return Returns true for success
+*/
+bool qsctest_rhx_padding_test();
 
 /**
 * \brief Run the set of FIPS 197 AES tests

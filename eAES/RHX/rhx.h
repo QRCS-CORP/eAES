@@ -20,7 +20,7 @@
 * Implementation Details:
 * An implementation of the Rijndael Hash-based eXtension (RHX/RSX=eAES) symmetric block cipher.
 * Written by John G. Underhill
-* Updated on January 20, 2020
+* Updated on December 05, 2020
 * Contact: develop@vtdev.com */
 
 /*!
@@ -82,9 +82,9 @@
 * 
 *
 * \author		John G. Underhill
-* \version		1.0.0.0d
+* \version		1.0.0.1a
 * \date			October 20, 2019
-* \updated		October 12, 2020
+* \updated		December 05, 2020
 * \contact:		develop@vtdev.com
 * \copyright	GPL version 3 license (GPLv3)
 */
@@ -96,7 +96,7 @@
 *
 * \author John Underhill
 * \date January 20, 2020
-* \updated October 14, 2020
+* \updated December 05, 2020
 *
 * <b>RHX-256 CTR short-form api example</b> \n
 * \code
@@ -174,11 +174,11 @@
 *
 *
 * \remarks
-* Toggle between the cSHAKE (default) and the HKDF(SHA2) extensions by defining the QSC_RHX_SHAKE_EXTENSION definition in this file. \n
+* Toggle between the eAES cSHAKE (default) and the HKDF(SHA2) extensions by defining the QSC_RHX_SHAKE_EXTENSION definition in this file. \n
 * The RHX cSHAKE extension is enabled by default, removing the QSC_RHX_SHAKE_EXTENSION reverts to the HKDF implementation of the key-schedule generator function. \n
 * To enable the AES-NI implementation, uncomment the definition in this file or add QSC_SYSTEM_AESNI_ENABLED or add it to the compiler preprocessor definitions. \n
 * To change the HBA authentication function from the KMAC Keccak-based to the HMAC(SHA2) authentication MAC protocol,
-* add the QSC_RHX_HKDF_EXTENSION fla5g to the preprocessor definitions. \n
+* add the QSC_RHX_HKDF_EXTENSION flag to the preprocessor definitions. \n
 * AVX-512 instructions integrated throughout. Set the Enhanced Instruction Set to AVX512 for maximum performance.
 *
 * For usage examples, see rhx_test.h. \n
@@ -519,8 +519,6 @@ QSC_EXPORT_API typedef struct
 	uint8_t mkey[32];					/*!< the mac generators key array */
 	uint8_t cust[QSC_HBA_MAXINFO_SIZE];	/*!< the ciphers custom key */
 	size_t custlen;						/*!< the custom key array length */
-	uint8_t aad[QSC_HBA_MAXAAD_SIZE];	/*!< the additional data array */
-	size_t aadlen;						/*!< the additional data array length */
 	bool encrypt;						/*!< the transformation mode; true for encryption */
 } qsc_rhx_hba256_state;
 
@@ -593,8 +591,6 @@ QSC_EXPORT_API typedef struct
 	uint8_t mkey[64];					/*!< the mac generators key array */
 	uint8_t cust[QSC_HBA_MAXINFO_SIZE];	/*!< the ciphers custom key */
 	size_t custlen;						/*!< the custom key array length */
-	uint8_t aad[QSC_HBA_MAXAAD_SIZE];	/*!< the additional data array */
-	size_t aadlen;						/*!< the additional data array length */
 	bool encrypt;						/*!< the transformation mode; true for encryption */
 } qsc_rhx_hba512_state;
 
