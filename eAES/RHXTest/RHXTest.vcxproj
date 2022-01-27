@@ -227,29 +227,45 @@
   <ItemGroup>
     <ClCompile Include="aesavs_test.c" />
     <ClCompile Include="cipher_speed.c" />
-    <ClCompile Include="filetools.c" />
+    <ClCompile Include="consoleutils.c" />
+    <ClCompile Include="cpuidex.c" />
+    <ClCompile Include="csp.c" />
+    <ClCompile Include="fileutils.c" />
+    <ClCompile Include="intutils.c" />
+    <ClCompile Include="memutils.c" />
+    <ClCompile Include="rhx.c" />
     <ClCompile Include="rhx_test.c" />
     <ClCompile Include="rhx_main.c" />
+    <ClCompile Include="selftest.c" />
+    <ClCompile Include="sha2.c" />
     <ClCompile Include="sha2_test.c" />
+    <ClCompile Include="sha3.c" />
     <ClCompile Include="sha3_test.c" />
+    <ClCompile Include="stringutils.c" />
     <ClCompile Include="testutils.c" />
-    <ClCompile Include="timer.c" />
+    <ClCompile Include="timerex.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="aesavs_test.h" />
     <ClInclude Include="cipher_speed.h" />
     <ClInclude Include="common.h" />
-    <ClInclude Include="filetools.h" />
+    <ClInclude Include="consoleutils.h" />
+    <ClInclude Include="cpuidex.h" />
+    <ClInclude Include="csp.h" />
+    <ClInclude Include="fileutils.h" />
+    <ClInclude Include="intrinsics.h" />
+    <ClInclude Include="intutils.h" />
+    <ClInclude Include="memutils.h" />
+    <ClInclude Include="rhx.h" />
     <ClInclude Include="rhx_test.h" />
+    <ClInclude Include="selftest.h" />
+    <ClInclude Include="sha2.h" />
     <ClInclude Include="sha2_test.h" />
+    <ClInclude Include="sha3.h" />
     <ClInclude Include="sha3_test.h" />
+    <ClInclude Include="stringutils.h" />
     <ClInclude Include="testutils.h" />
-    <ClInclude Include="timer.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\RHX\RHX.vcxproj">
-      <Project>{32f79f3c-ac53-4769-8f2f-f2c9494b1a7c}</Project>
-    </ProjectReference>
+    <ClInclude Include="timerex.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

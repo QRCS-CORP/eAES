@@ -4,12 +4,6 @@
     <ClCompile Include="aesavs_test.c">
       <Filter>Source Files\Test</Filter>
     </ClCompile>
-    <ClCompile Include="filetools.c">
-      <Filter>Source Files\Common</Filter>
-    </ClCompile>
-    <ClCompile Include="testutils.c">
-      <Filter>Source Files\Common</Filter>
-    </ClCompile>
     <ClCompile Include="sha2_test.c">
       <Filter>Source Files\Test</Filter>
     </ClCompile>
@@ -22,25 +16,52 @@
     <ClCompile Include="rhx_test.c">
       <Filter>Source Files\Test</Filter>
     </ClCompile>
-    <ClCompile Include="timer.c">
-      <Filter>Source Files\Common</Filter>
-    </ClCompile>
     <ClCompile Include="cipher_speed.c">
       <Filter>Source Files\Test</Filter>
     </ClCompile>
+    <ClCompile Include="stringutils.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="sha3.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="sha2.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="selftest.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="rhx.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="memutils.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="intutils.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="csp.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="cpuidex.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="consoleutils.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="fileutils.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="timerex.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="testutils.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="filetools.h">
-      <Filter>Header Files\Common</Filter>
-    </ClInclude>
-    <ClInclude Include="testutils.h">
-      <Filter>Header Files\Common</Filter>
-    </ClInclude>
     <ClInclude Include="aesavs_test.h">
       <Filter>Header Files\Test</Filter>
-    </ClInclude>
-    <ClInclude Include="common.h">
-      <Filter>Header Files\Common</Filter>
     </ClInclude>
     <ClInclude Include="sha2_test.h">
       <Filter>Header Files\Test</Filter>
@@ -51,11 +72,53 @@
     <ClInclude Include="rhx_test.h">
       <Filter>Header Files\Test</Filter>
     </ClInclude>
-    <ClInclude Include="timer.h">
-      <Filter>Header Files\Common</Filter>
-    </ClInclude>
     <ClInclude Include="cipher_speed.h">
       <Filter>Header Files\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="common.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="consoleutils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="cpuidex.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="csp.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="intrinsics.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="intutils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="memutils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="rhx.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="selftest.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="sha2.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="sha3.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="stringutils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="fileutils.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="timerex.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="testutils.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -65,17 +128,11 @@
     <Filter Include="Source Files">
       <UniqueIdentifier>{f4b99147-8c1b-4512-be15-7a730f640646}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Header Files\Common">
-      <UniqueIdentifier>{2c5bfa61-de19-4ffe-976c-0e0622892be8}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Header Files\Test">
       <UniqueIdentifier>{388bc85c-5a16-4fa8-a5b0-c53cc8a090ad}</UniqueIdentifier>
     </Filter>
     <Filter Include="Source Files\Test">
       <UniqueIdentifier>{5777cbd0-a9aa-44d5-83e5-469413363332}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Source Files\Common">
-      <UniqueIdentifier>{6ef273a1-b0a6-4cfb-ac18-fbb60d6c2c73}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

@@ -15,7 +15,7 @@
 #define QSCTEST_RHX_TEST_H
 
 #include "common.h"
-#include "../RHX/rhx.h"
+#include "rhx.h"
 
 #if defined(QSC_SYSTEM_AESNI_ENABLED) 
 #	if defined(QSC_SYSTEM_HAS_AVX512)

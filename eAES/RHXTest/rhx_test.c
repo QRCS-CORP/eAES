@@ -1,8 +1,8 @@
 #include "rhx_test.h"
-#include "../RHX/intutils.h"
-#include "../RHX/sha2.h"
-#include "../RHX/sha3.h"
-#include "../RHX/csp.h"
+#include "csp.h"
+#include "intutils.h"
+#include "sha2.h"
+#include "sha3.h"
 #include "testutils.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -2106,7 +2106,7 @@ bool qsctest_rhx_padding_test()
 	for (i = 2; i < QSC_RHX_BLOCK_SIZE; ++i)
 	{
 		qsc_csp_generate(iv, sizeof(iv));
-		iv[QSC_RHX_BLOCK_SIZE - 1] = i;
+		iv[QSC_RHX_BLOCK_SIZE - 1] = (uint8_t)i;
 
 		if (qsc_pkcs7_padding_length(iv) != 0)
 		{
