@@ -1,27 +1,20 @@
- /* The GPL version 3 License (GPLv3)
-* 
-* Copyright (c) 2020 Digital Freedom Defence Inc.
-* This file is part of the QSC Cryptographic library
-* 
-* This program is free software : you can redistribute it and / or modify
-* it under the terms of the GNU General Public License as published by
-* the Free Software Foundation, either version 3 of the License, or
-* (at your option) any later version.
-* 
-* This program is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.See the
-* GNU General Public License for more details.
-* 
-* You should have received a copy of the GNU General Public License
-* along with this program. If not, see <http://www.gnu.org/licenses/>.
-* 
-*
-* Implementation Details:
-* An implementation of the Rijndael Hash-based eXtension (RHX/RSX=eAES) symmetric block cipher.
-* Written by John G. Underhill
-* Updated on December 05, 2020
-* Contact: develop@vtdev.com */
+
+/* 2024 Quantum Resistant Cryptographic Solutions Corporation
+ * All Rights Reserved.
+ *
+ * NOTICE:  All information contained herein is, and remains
+ * the property of Quantum Resistant Cryptographic Solutions Incorporated.
+ * The intellectual and technical concepts contained
+ * herein are proprietary to Quantum Resistant Cryptographic Solutions Incorporated
+ * and its suppliers and may be covered by U.S. and Foreign Patents,
+ * patents in process, and are protected by trade secret or copyright law.
+ * Dissemination of this information or reproduction of this material
+ * is strictly forbidden unless prior written permission is obtained
+ * from Quantum Resistant Cryptographic Solutions Incorporated.
+ *
+ * Written by John G. Underhill
+ * Contact: develop@qrcs.ca
+ */
 
 /*!
 * \mainpage <b>The RHX cipher</b>
@@ -42,7 +35,7 @@
 * In extended mode, the key schedules round-key expansion function has been replaced by cSHAKE or HKDF, and can now can safely produce a larger round-key array,
 * unlocking an increased number of mixing rounds, and preventing many serious forms of attack on the Rijndael cipher.
 *
-* <p>This is a 'tweakable cipher', the initialization parameters qsc_rhx_keyparams, include an info parameter.
+* <p>This is a 'tweakable cipher', the initialization parameters rhx_keyparams, include an info parameter.
 * Internally, the info parameter is used to customize the SHAKE output, using the 'name' parameter to pre-initialize the cSHAKE state. 
 * If using the HKDF extension, this parameter is used as the HKDF Expand 'info' parameter, added to the input key and internal counter, and processed by the HMAC pseudo-random function.
 * The default value for this information parameter is the cipher name, the extension type H or S, the size of the extension generators security in bits, 
@@ -67,8 +60,8 @@
 * The Cipher Block Chaining mode (CBC). \n
 * The authenticated block-cipher counter with Hash Based Authentication AEAD mode; HBA. \n
 * This implementation has both a C reference, and an implementation that uses the AES-NI instructions that are used in the AES and RHX cipher variants. \n
-* The AES-NI implementation can be enabled by adding the QSC_SYSTEM_AESNI_ENABLED constant to your preprocessor definitions. \n
-* The implementation can be toggled from SHA3 to SHA2 operation mode by adding the QSC_RHX_HKDF_EXTENSION to the pre-processor definitions. \n
+* The AES-NI implementation can be enabled by adding the SYSTEM_AESNI_ENABLED constant to your preprocessor definitions. \n
+* The implementation can be toggled from SHA3 to SHA2 operation mode by adding the RHX_HKDF_EXTENSION to the pre-processor definitions. \n
 * The AES128 and AES256 implementations along with the ECB, CTR, and CBC modes are tested using vectors from NIST SP800-38a. \n
 * The RHX-256, RHX-512, and HBA known answer vectors are taken from the CEX++ cryptographic library;
 * <a href="https://github.com/Steppenwolfe65/CEX">The CEX++ Cryptographic Library</a>. \n
@@ -104,18 +97,18 @@
 * const size_t MSG_LEN = 200;
 * const size_t CST_LEN = 20;
 * uint8_t msg[MSG_LEN] = {...};
-* uint8_t key[QSC_RHX256_KEY_SIZE] = {...};
-* uint8_t nonce[QSC_RHX_BLOCK_SIZE] = {...};
+* uint8_t key[RHX_RHX256_KEY_SIZE] = {...};
+* uint8_t nonce[RHX_BLOCK_SIZE] = {...};
 * uint8_t cust[CST_LEN] = {...};
 * ...
 * uint8_t output[MSG_LEN] = { 0 };
-* qsc_hba_state state;
-* qsc_rhx_keyparams kp = { key, QSC_RHX256_KEY_SIZE, nonce, cust, CST_LEN };
+* rhx_hba_state state;
+* rhx_keyparams kp = { key, RHX_RHX256_KEY_SIZE, nonce, cust, CST_LEN };
 * 
 * // initialize the state
-* qsc_rhx_initialize(&state, &kp, true, RHX256);
+* rhx_initialize(&state, &kp, true, RHX256);
 * // encrypt the message
-* qsc_rhx_ctr_transform(&state, output, msg, MSG_LEN)
+* rhx_ctr_transform(&state, output, msg, MSG_LEN)
 * \endcode
 *
 * <b>HBA RHX-512 encryption example</b> \n
@@ -125,22 +118,22 @@
 * const size_t CST_LEN = 20;
 * const size_t AAD_LEN = 20;
 * uint8_t msg[MSG_LEN] = {...};
-* uint8_t key[QSC_RHX256_KEY_SIZE] = {...};
-* uint8_t nonce[QSC_RHX_BLOCK_SIZE] = {...};
+* uint8_t key[RHX_RHX256_KEY_SIZE] = {...};
+* uint8_t nonce[RHX_BLOCK_SIZE] = {...};
 * uint8_t cust[CST_LEN] = {...};
 * uint8_t aad[CST_LEN] = {...};
 * ...
 *
 * // mac-code will be appended to the cipher-text
-* uint8_t cpt[MSG_LEN + QSC_HBA512_MAC_LENGTH] = { 0 };
-* hba_keyparams kp = { key, QSC_RHX512_KEY_SIZE, nonce, cust, CST_LEN};
+* uint8_t cpt[MSG_LEN + RHX_HBA512_MAC_LENGTH] = { 0 };
+* hba_keyparams kp = { key, RHX_RHX512_KEY_SIZE, nonce, cust, CST_LEN};
 *
 * // initialize the cipher state for encryption
-* qsc_rhx_hba512_initialize(&state, &kp, true);
+* rhx_hba512_initialize(&state, &kp, true);
 * // add the associated data
-* qsc_hba_set_associated(&state, aad, sizeof(aad));
+* rhx_hba_set_associated(&state, aad, sizeof(aad));
 * // encrypt the message
-* qsc_rhx_hba512_transform(&state, cpt, msg, MSG_LEN);
+* rhx_hba512_transform(&state, cpt, msg, MSG_LEN);
 * \endcode
 *
 *
@@ -152,21 +145,21 @@
 * const size_t AAD_LEN = 20;
 * // the cipher-text containing the encrypted plain-text and the mac-code
 * uint8_t cpt[CPT_LEN] = { hba_encrypt(k,p) }
-* uint8_t key[QSC_RHX256_KEY_SIZE] = {...};
-* uint8_t nonce[QSC_RHX_BLOCK_SIZE] = {...};
+* uint8_t key[RHX_RHX256_KEY_SIZE] = {...};
+* uint8_t nonce[RHX_BLOCK_SIZE] = {...};
 * uint8_t cust[CST_LEN] = {...};
 * ...
 * // subtract the mac-code length from the overall cipher-text length for the message size
-* const size_t MSG_LEN = CPT_LEN - QSC_HBA512_MAC_LENGTH;
+* const size_t MSG_LEN = CPT_LEN - RHX_HBA512_MAC_LENGTH;
 * uint8_t msg[MSG_LEN] = { 0 };
-* hba_keyparams kp = { key, QSC_RHX512_KEY_SIZE, nonce, cust, CST_LEN, aad, AAD_LEN };
+* hba_keyparams kp = { key, RHX_RHX512_KEY_SIZE, nonce, cust, CST_LEN, aad, AAD_LEN };
 *
 * // initialize the cipher state for decryption
-* qsc_rhx_hba512_initialize(&state, &kp, false);
+* rhx_hba512_initialize(&state, &kp, false);
 * // add the associated data
-* qsc_hba_set_associated(&state, aad, sizeof(aad));
+* rhx_hba_set_associated(&state, aad, sizeof(aad));
 * // authenticate and decrypt the cipher-text
-* if (qsc_rhx_hba512_transform(&state, msg, cpt, CPT_LEN - QSC_HBA512_MAC_LENGTH) == false)
+* if (rhx_hba512_transform(&state, msg, cpt, CPT_LEN - RHX_HBA512_MAC_LENGTH) == false)
 * {
 *	// authentication has failed, do something..
 * }
@@ -174,92 +167,87 @@
 *
 *
 * \remarks
-* Toggle between the eAES cSHAKE (default) and the HKDF(SHA2) extensions by defining the QSC_RHX_SHAKE_EXTENSION definition in this file. \n
-* The RHX cSHAKE extension is enabled by default, removing the QSC_RHX_SHAKE_EXTENSION reverts to the HKDF implementation of the key-schedule generator function. \n
-* To enable the AES-NI implementation, uncomment the definition in this file or add QSC_SYSTEM_AESNI_ENABLED or add it to the compiler preprocessor definitions. \n
+* Toggle between the eAES cSHAKE (default) and the HKDF(SHA2) extensions by defining the RHX_SHAKE_EXTENSION definition in this file. \n
+* The RHX cSHAKE extension is enabled by default, removing the RHX_SHAKE_EXTENSION reverts to the HKDF implementation of the key-schedule generator function. \n
+* To enable the AES-NI implementation, uncomment the definition in this file or add SYSTEM_AESNI_ENABLED or add it to the compiler preprocessor definitions. \n
 * To change the HBA authentication function from the KMAC Keccak-based to the HMAC(SHA2) authentication MAC protocol,
-* add the QSC_RHX_HKDF_EXTENSION flag to the preprocessor definitions. \n
+* add the RHX_HKDF_EXTENSION flag to the preprocessor definitions. \n
 * AVX-512 instructions integrated throughout. Set the Enhanced Instruction Set to AVX512 for maximum performance.
 *
 * For usage examples, see rhx_test.h. \n
 */
 
-#ifndef QSC_RHX_H
-#define QSC_RHX_H
+#ifndef RHX_RHX_H
+#define RHX_RHX_H
 
 #include "common.h"
+#include "hash.h"
 
-/*! \enum qsc_rhx_cipher_mode
+/*! \enum rhx_cipher_mode
 * The pre-defined cipher mode implementations
 */
-QSC_EXPORT_API typedef enum
+RHX_EXPORT_API typedef enum
 {
 	AES128 = 1,	/*!< The AES-128 block cipher */
 	AES256 = 2,	/*!< The AES-256 block cipher */
 	RHX256 = 3,	/*!< The RHX-256 block cipher */
 	RHX512 = 4,	/*!< The RHX-512 block cipher */
-} qsc_rhx_cipher_type;
+} rhx_cipher_type;
 
-/*! \enum qsc_rhx_cipher_mode
+/*! \enum rhx_cipher_mode
 * The pre-defined cipher mode implementations
 */
-QSC_EXPORT_API typedef enum
+RHX_EXPORT_API typedef enum
 {
 	CBC = 1,	/*!< Cipher Block Chaining */
 	CTR = 2,	/*!< segmented integer counter */
 	ECB = 3,	/*!< Electronic CodeBook mode (insecure) */
 	HBA = 4,	/*!< Hash Based Authentication block-cipher Counter Mode */
-} qsc_rhx_cipher_mode;
+} rhx_cipher_mode;
 
 /***********************************
 *    USER CONFIGURABLE SETTINGS    *
 ***********************************/
 
 /*!
-\def QSC_SYSTEM_AESNI_ENABLED
+\def SYSTEM_AESNI_ENABLED
 * Enable the use of intrinsics and the AES-NI implementation.
-* Just for testing, add the QSC_SYSTEM_AESNI_ENABLED preprocessor definition and enable SIMD and AES-NI.
+* Just for testing, add the SYSTEM_AESNI_ENABLED preprocessor definition and enable SIMD and AES-NI.
 */
-#if !defined(QSC_SYSTEM_AESNI_ENABLED)
-#	if defined(QSC_SYSTEM_AVX_INTRINSICS)
-#		define QSC_SYSTEM_AESNI_ENABLED
+#if !defined(SYSTEM_AESNI_ENABLED)
+#	if defined(SYSTEM_AVX_INTRINSICS)
+#		define SYSTEM_AESNI_ENABLED
 #	endif
 #endif 
 
-#if defined(QSC_SYSTEM_AESNI_ENABLED)
-#	if defined(QSC_SYSTEM_COMPILER_MSC)
+#if defined(SYSTEM_AESNI_ENABLED)
+#	if defined(SYSTEM_COMPILER_MSC)
 #		include <intrin.h>
 #		include <immintrin.h>
-#	elif defined(QSC_SYSTEM_COMPILER_GCC)
+#	elif defined(SYSTEM_COMPILER_GCC)
 #		include <x86intrin.h>
 #	endif
 #endif
 
 /*!
-\def QSC_RHX_HKDF_EXTENSION
+\def RHX_HKDF_EXTENSION
 * Enables the HKDF extensions for the cipher (alternate mode of authentication).
 * If not defined, the default cSHAKE extensions are used.
 */
-#if !defined(QSC_RHX_HKDF_EXTENSION)
-//#	define QSC_RHX_HKDF_EXTENSION
+#if !defined(RHX_HKDF_EXTENSION)
+//#	define RHX_HKDF_EXTENSION
 #endif
 
 /*!
-\def QSC_RHX_SHAKE_EXTENSION
+\def RHX_SHAKE_EXTENSION
 * Enables the cSHAKE extensions for the cipher (default mode of operation).
 * If not defined, the HKDF(SHA2) extensions are used.
-* If the the QSC_RHX_HKDF_EXTENSION extension flag is defined, HBA reverts to HMAC(SHA2) authentication.
+* If the the RHX_HKDF_EXTENSION extension flag is defined, HBA reverts to HMAC(SHA2) authentication.
 */
-#if !defined(QSC_RHX_SHAKE_EXTENSION)
-#	if !defined(QSC_RHX_HKDF_EXTENSION)
-#		define QSC_RHX_SHAKE_EXTENSION
+#if !defined(RHX_SHAKE_EXTENSION)
+#	if !defined(RHX_HKDF_EXTENSION)
+#		define RHX_SHAKE_EXTENSION
 #	endif
-#endif
-
-#if defined(QSC_RHX_SHAKE_EXTENSION)
-#	include "sha3.h"
-#else
-#	include "sha2.h"
 #endif
 
 /***********************************
@@ -267,91 +255,91 @@ QSC_EXPORT_API typedef enum
 ***********************************/
 
 /*!
-\def QSC_HBA256_MAC_LENGTH
+\def RHX_HBA256_MAC_LENGTH
 * The HBA-256 MAC code array length in bytes.
 */
-#define QSC_HBA256_MAC_LENGTH 32
+#define RHX_HBA256_MAC_LENGTH 32
 
 /*!
-\def QSC_HBA512_MAC_LENGTH
+\def RHX_HBA512_MAC_LENGTH
 * The HBA-512 MAC code array length in bytes.
 */
-#define QSC_HBA512_MAC_LENGTH 64
+#define RHX_HBA512_MAC_LENGTH 64
 
 /*!
-\def QSC_HBA_KMAC_AUTH
+\def RHX_HBA_KMAC_AUTH
 * Use KMAC to authenticate HBA; removing this macro is enabled when running in SHAKE extension mode.
-* If the QSC_RHX_SHAKE_EXTENSION is disabled, HMAC(SHA2) is the default authentication mode in HBA.
+* If the RHX_SHAKE_EXTENSION is disabled, HMAC(SHA2) is the default authentication mode in HBA.
 */
-#if defined(QSC_RHX_SHAKE_EXTENSION)
-#	define QSC_HBA_KMAC_AUTH
+#if defined(RHX_SHAKE_EXTENSION)
+#	define RHX_HBA_KMAC_AUTH
 #endif
 
 /*!
-\def QSC_RHX_BLOCK_SIZE
+\def RHX_BLOCK_SIZE
 * The internal block size in bytes, required by the encryption and decryption functions.
 */
-#define QSC_RHX_BLOCK_SIZE 16
+#define RHX_BLOCK_SIZE 16
 
 /*!
-\def QSC_AES128_KEY_SIZE
+\def RHX_AES128_KEY_SIZE
 * The size in bytes of the AES-128 input cipher-key.
 */
-#define QSC_AES128_KEY_SIZE 16
+#define RHX_AES128_KEY_SIZE 16
 
 /*!
-\def QSC_AES256_KEY_SIZE
+\def RHX_AES256_KEY_SIZE
 * The size in bytes of the AES-256 input cipher-key.
 */
-#define QSC_AES256_KEY_SIZE 32
+#define RHX_AES256_KEY_SIZE 32
 
 /*!
-\def QSC_RHX256_KEY_SIZE
+\def RHX_RHX256_KEY_SIZE
 * The size in bytes of the RHX-256 input cipher-key.
 */
-#define QSC_RHX256_KEY_SIZE 32
+#define RHX_RHX256_KEY_SIZE 32
 
 /*!
-\def QSC_RHX512_KEY_SIZE
+\def RHX_RHX512_KEY_SIZE
 * The size in bytes of the RHX-512 input cipher-key.
 */
-#define QSC_RHX512_KEY_SIZE 64
+#define RHX_RHX512_KEY_SIZE 64
 
 /*!
-\def QSC_HBA_MAXAAD_SIZE
+\def RHX_HBA_MAXAAD_SIZE
 * The maximum allowed AAD size.
 */
-#define QSC_HBA_MAXAAD_SIZE 256
+#define RHX_HBA_MAXAAD_SIZE 256
 
 /*!
-\def QSC_HBA_MAXINFO_SIZE
+\def RHX_HBA_MAXINFO_SIZE
 * The maximum allowed key info size.
 */
-#define QSC_HBA_MAXINFO_SIZE 256
+#define RHX_HBA_MAXINFO_SIZE 256
 
-/*! \struct qsc_rhx_keyparams
+/*! \struct rhx_keyparams
 * The key parameters structure containing key and info arrays and lengths.
-* Use this structure to load an input cipher-key and optional info tweak, using the qsc_rhx_initialize function.
+* Use this structure to load an input cipher-key and optional info tweak, using the rhx_initialize function.
 * Keys must be random and secret, and align to the corresponding key size of the cipher implemented.
 * The info parameter is optional, and can be a salt or cryptographic key.
 */
-QSC_EXPORT_API typedef struct
+RHX_EXPORT_API typedef struct
 {
 	const uint8_t* key;				/*!< The input cipher key */
 	size_t keylen;					/*!< The length in bytes of the cipher key */
 	uint8_t* nonce;					/*!< The nonce or initialization vector */
 	const uint8_t* info;			/*!< The information tweak */
 	size_t infolen;					/*!< The length in bytes of the information tweak */
-} qsc_rhx_keyparams;
+} rhx_keyparams;
 
-/*! \struct qsc_rhx_state
+/*! \struct rhx_state
 * The internal state structure containing the round-key array.
 */
-QSC_EXPORT_API typedef struct
+RHX_EXPORT_API typedef struct
 {
-#if defined(QSC_SYSTEM_AESNI_ENABLED)
-	__m128i roundkeys[31];		/*!< The 128-bit intel integer round-key array */
-#	if defined(QSC_SYSTEM_HAS_AVX512)
+#if defined(SYSTEM_AESNI_ENABLED)
+	__m128i roundkeys[31];			/*!< The 128-bit intel integer round-key array */
+#	if defined(SYSTEM_HAS_AVX512)
 		__m512i roundkeysw[31];
 #	endif
 #else
@@ -360,74 +348,74 @@ QSC_EXPORT_API typedef struct
 	size_t roundkeylen;				/*!< The round-key array length */
 	size_t rounds;					/*!< The number of transformation rounds */
 	uint8_t* nonce;					/*!< The nonce or initialization vector */
-} qsc_rhx_state;
+} rhx_state;
 
 /* common functions */
 
 /**
 * \brief Erase the round-key array and size
 */
-QSC_EXPORT_API void qsc_rhx_dispose(qsc_rhx_state* state);
+RHX_EXPORT_API void rhx_dispose(rhx_state* state);
 
 /**
 * \brief Initialize the state with the input cipher-key and optional info tweak. 
-* The qsc_rhx_state round-key array must be initialized and size set before passing the state to this function.
+* The rhx_state round-key array must be initialized and size set before passing the state to this function.
 *
-* \param state: [struct] The qsc_rhx_state structure
+* \param state: [struct] The rhx_state structure
 * \param keyparams: The input cipher-key, expanded to the state round-key array
 * \param encryption: Initialize the cipher for encryption, false for decryption mode
 *
 * \warning When using a CTR mode, the cipher is always initialized for encryption.
 */
-QSC_EXPORT_API void qsc_rhx_initialize(qsc_rhx_state* state, const qsc_rhx_keyparams* keyparams, bool encryption, qsc_rhx_cipher_type ctype);
+RHX_EXPORT_API void rhx_initialize(rhx_state* state, const rhx_keyparams* keyparams, bool encryption, rhx_cipher_type ctype);
 
 /* cbc mode */
 
 /**
 * \brief Decrypt a length of cipher-text using Cipher Block Chaining mode. \n
 *
-* \warning the qsc_rhx_initialize function must be called first to initialize the state
+* \warning the rhx_initialize function must be called first to initialize the state
 *
-* \param state: [struct] The initialized qsc_rhx_state structure
+* \param state: [struct] The initialized rhx_state structure
 * \param output: The output byte array; receives the decrypted plain-text
 * \param input: [const] The input cipher-text bytes
 * \param inputlen: The number of input cipher-text bytes to decrypt
 */
-QSC_EXPORT_API void qsc_rhx_cbc_decrypt(qsc_rhx_state* state, uint8_t* output, size_t *outputlen, const uint8_t* input, size_t inputlen);
+RHX_EXPORT_API void rhx_cbc_decrypt(rhx_state* state, uint8_t* output, size_t *outputlen, const uint8_t* input, size_t inputlen);
 
 /**
 * \brief Encrypt a length of cipher-text using Cipher Block Chaining mode. \n
 *
-* \warning the qsc_rhx_initialize function must be called first to initialize the state
+* \warning the rhx_initialize function must be called first to initialize the state
 *
-* \param state: [struct] The initialized qsc_rhx_state structure
+* \param state: [struct] The initialized rhx_state structure
 * \param output: The output byte array; receives the encrypted plain-text
 * \param input: [const] The input plain-text bytes
 * \param inputlen: The number of input plain-text bytes to encrypt
 */
-QSC_EXPORT_API void qsc_rhx_cbc_encrypt(qsc_rhx_state* state, uint8_t* output, const uint8_t* input, size_t inputlen);
+RHX_EXPORT_API void rhx_cbc_encrypt(rhx_state* state, uint8_t* output, const uint8_t* input, size_t inputlen);
 
 /**
 * \brief Decrypt one 16-byte block of cipher-text using Cipher Block Chaining mode. \n
 *
-* \warning the qsc_rhx_initialize function must be called first to initialize the state
+* \warning the rhx_initialize function must be called first to initialize the state
 *
-* \param state: [struct] The initialized qsc_rhx_state structure
+* \param state: [struct] The initialized rhx_state structure
 * \param output: The output byte array; receives the decrypted plain-text
 * \param input: [const] The input cipher-text block of bytes
 */
-QSC_EXPORT_API void qsc_rhx_cbc_decrypt_block(qsc_rhx_state* state, uint8_t* output, const uint8_t* input);
+RHX_EXPORT_API void rhx_cbc_decrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input);
 
 /**
 * \brief Encrypt one 16-byte block of cipher-text using Cipher Block Chaining mode. \n
 *
-* \warning the qsc_rhx_initialize function must be called first to initialize the state
+* \warning the rhx_initialize function must be called first to initialize the state
 *
-* \param state: [struct] The initialized qsc_rhx_state structure
+* \param state: [struct] The initialized rhx_state structure
 * \param output: The output byte array; receives the encrypted cipher-text
 * \param input: [const] The input plain-text block of bytes
 */
-QSC_EXPORT_API void qsc_rhx_cbc_encrypt_block(qsc_rhx_state* state, uint8_t* output, const uint8_t* input);
+RHX_EXPORT_API void rhx_cbc_encrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input);
 
 /* pkcs7 */
 
@@ -438,7 +426,7 @@ QSC_EXPORT_API void qsc_rhx_cbc_encrypt_block(qsc_rhx_state* state, uint8_t* out
 * \param offset: The first byte in the block to pad
 * \param length: The length of the plaintext block
 */
-QSC_EXPORT_API void qsc_pkcs7_add_padding(uint8_t* input, size_t length);
+RHX_EXPORT_API void rhx_pkcs7_add_padding(uint8_t* input, size_t length);
 
 /**
 * \brief Get the number of padded bytes in a block of decrypted cipher-text.
@@ -449,7 +437,7 @@ QSC_EXPORT_API void qsc_pkcs7_add_padding(uint8_t* input, size_t length);
 * 
 * \return: The length of the block padding
 */
-QSC_EXPORT_API size_t qsc_pkcs7_padding_length(const uint8_t* input);
+RHX_EXPORT_API size_t rhx_pkcs7_padding_length(const uint8_t* input);
 
 /* ctr mode */
 
@@ -457,27 +445,27 @@ QSC_EXPORT_API size_t qsc_pkcs7_padding_length(const uint8_t* input);
 * \brief Transform a length of data using a Big Endian block cipher Counter mode. \n
 * The CTR mode will encrypt plain-text, and decrypt cipher-text.
 *
-* \warning the qsc_rhx_initialize function must be called first to initialize the state
+* \warning the rhx_initialize function must be called first to initialize the state
 *
-* \param state: [struct] The initialized qsc_rhx_state structure
+* \param state: [struct] The initialized rhx_state structure
 * \param output: The output byte array; receives the transformed text
 * \param input: [const] The input data byte array
 * \param inputlen: The number of input bytes to transform
 */
-QSC_EXPORT_API void qsc_rhx_ctrbe_transform(qsc_rhx_state* state, uint8_t* output, const uint8_t* input, size_t inputlen);
+RHX_EXPORT_API void rhx_ctrbe_transform(rhx_state* state, uint8_t* output, const uint8_t* input, size_t inputlen);
 
 /**
 * \brief Transform a length of data using a Little Endian block cipher Counter mode. \n
 * The CTR mode will encrypt plain-text, and decrypt cipher-text.
 *
-* \warning the qsc_rhx_initialize function must be called first to initialize the state
+* \warning the rhx_initialize function must be called first to initialize the state
 *
-* \param state: [struct] The initialized qsc_rhx_state structure
+* \param state: [struct] The initialized rhx_state structure
 * \param output: The output byte array; receives the transformed text
 * \param input: [const] The input data byte array
 * \param inputlen: The number of input bytes to transform
 */
-QSC_EXPORT_API void qsc_rhx_ctrle_transform(qsc_rhx_state* state, uint8_t* output, const uint8_t* input, size_t inputlen);
+RHX_EXPORT_API void rhx_ctrle_transform(rhx_state* state, uint8_t* output, const uint8_t* input, size_t inputlen);
 
 /* ecb mode */
 
@@ -485,42 +473,42 @@ QSC_EXPORT_API void qsc_rhx_ctrle_transform(qsc_rhx_state* state, uint8_t* outpu
 * \brief Decrypt one 16-byte block of cipher-text using Electronic CodeBook Mode mode. \n
 * \warning ECB is not a secure mode, and should be used only for testing, or building more complex primitives.
 *
-* \param state: [struct] The initialized qsc_rhx_state structure
+* \param state: [struct] The initialized rhx_state structure
 * \param output: The output byte array; receives the decrypted plain-text
 * \param input: [const] The input cipher-text block of bytes
 */
-QSC_EXPORT_API void qsc_rhx_ecb_decrypt_block(qsc_rhx_state* state, uint8_t* output, const uint8_t* input);
+RHX_EXPORT_API void rhx_ecb_decrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input);
 
 /**
 * \brief Encrypt one 16-byte block of cipher-text using Electronic CodeBook Mode mode. \n
 * \warning ECB is not a secure mode, and should be used only for testing, or building more complex primitives.
 * 
-* \param state: [struct] The initialized qsc_rhx_state structure
+* \param state: [struct] The initialized rhx_state structure
 * \param output: The output byte array; receives the encrypted cipher-text
 * \param input: [const] The input plain-text block of bytes
 */
-QSC_EXPORT_API void qsc_rhx_ecb_encrypt_block(qsc_rhx_state* state, uint8_t* output, const uint8_t* input);
+RHX_EXPORT_API void rhx_ecb_encrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input);
 
 /* HBA-256 */
 
-/*! \struct qsc_rhx_hba256_state
+/*! \struct rhx_hba256_state
 * The HBA-256 state array; pointers for the cipher state, mack key and length, transformation mode, and the state counter.
 * Used by the long-form of the HBA api, and initialized by the hba_initialize function.
 */
-QSC_EXPORT_API typedef struct
+RHX_EXPORT_API typedef struct
 {
-#if defined(QSC_RHX_SHAKE_EXTENSION)
-	qsc_keccak_state kstate;	/*!< the mac state */
+#if defined(RHX_SHAKE_EXTENSION)
+	keccak_state kstate;	/*!< the mac state */
 #else
-	qsc_hmac256_state kstate;
+	hmac256_state kstate;
 #endif
-	qsc_rhx_state cstate;				/*!< the underlying block-ciphers state structure */
+	rhx_state cstate;				/*!< the underlying block-ciphers state structure */
 	uint64_t counter;					/*!< the processed bytes counter */
 	uint8_t mkey[32];					/*!< the mac generators key array */
-	uint8_t cust[QSC_HBA_MAXINFO_SIZE];	/*!< the ciphers custom key */
+	uint8_t cust[RHX_HBA_MAXINFO_SIZE];	/*!< the ciphers custom key */
 	size_t custlen;						/*!< the custom key array length */
 	bool encrypt;						/*!< the transformation mode; true for encryption */
-} qsc_rhx_hba256_state;
+} rhx_hba256_state;
 
 /**
 * \brief Dispose of the HBA-256 cipher state
@@ -531,7 +519,7 @@ QSC_EXPORT_API typedef struct
 *
 * \param state: [struct] The HBA state structure; contains internal state information
 */
-QSC_EXPORT_API void qsc_rhx_hba256_dispose(qsc_rhx_hba256_state* state);
+RHX_EXPORT_API void rhx_hba256_dispose(rhx_hba256_state* state);
 
 /**
 * \brief Initialize the cipher and load the keying material.
@@ -543,7 +531,7 @@ QSC_EXPORT_API void qsc_rhx_hba256_dispose(qsc_rhx_hba256_state* state);
 * \param keyparams: [struct] The HBA key parameters, includes the key, and optional AAD and user info arrays
 * \param encrypt: The cipher encryption mode; true for encryption, false for decryption
 */
-QSC_EXPORT_API void qsc_rhx_hba256_initialize(qsc_rhx_hba256_state* state, const qsc_rhx_keyparams* keyparams, bool encrypt);
+RHX_EXPORT_API void rhx_hba256_initialize(rhx_hba256_state* state, const rhx_keyparams* keyparams, bool encrypt);
 
 /**
 * \brief Set the associated data string used in authenticating the message.
@@ -555,7 +543,7 @@ QSC_EXPORT_API void qsc_rhx_hba256_initialize(qsc_rhx_hba256_state* state, const
 * \param data: [const] The associated data array
 * \param datalen: The associated data array length
 */
-QSC_EXPORT_API void qsc_rhx_hba256_set_associated(qsc_rhx_hba256_state* state, const uint8_t* data, size_t datalen);
+RHX_EXPORT_API void rhx_hba256_set_associated(rhx_hba256_state* state, const uint8_t* data, size_t datalen);
 
 /**
 * \brief Transform an array of bytes using an instance of RHX-256.
@@ -571,28 +559,28 @@ QSC_EXPORT_API void qsc_rhx_hba256_set_associated(qsc_rhx_hba256_state* state, c
 *
 * \return: Returns true if the cipher has been initialized successfully, false on failure
 */
-QSC_EXPORT_API bool qsc_rhx_hba256_transform(qsc_rhx_hba256_state* state, uint8_t* output, const uint8_t* input, size_t inputlen);
+RHX_EXPORT_API bool rhx_hba256_transform(rhx_hba256_state* state, uint8_t* output, const uint8_t* input, size_t inputlen);
 
 /* HBA-512 */
 
-/*! \struct qsc_hba_state
+/*! \struct rhx_hba_state
 * The HBA state array; pointers for the cipher state, mack key and length, transformation mode, and the state counter.
 * Used by the long-form of the HBA api, and initialized by the hba_initialize function.
 */
-QSC_EXPORT_API typedef struct
+RHX_EXPORT_API typedef struct
 {
-#if defined(QSC_RHX_SHAKE_EXTENSION)
-	qsc_keccak_state kstate;	/*!< the mac state */
+#if defined(RHX_SHAKE_EXTENSION)
+	keccak_state kstate;	/*!< the mac state */
 #else
-	qsc_hmac512_state kstate;
+	hmac512_state kstate;
 #endif
-	qsc_rhx_state cstate;				/*!< the underlying block-ciphers state structure */
+	rhx_state cstate;				/*!< the underlying block-ciphers state structure */
 	uint64_t counter;					/*!< the processed bytes counter */
 	uint8_t mkey[64];					/*!< the mac generators key array */
-	uint8_t cust[QSC_HBA_MAXINFO_SIZE];	/*!< the ciphers custom key */
+	uint8_t cust[RHX_HBA_MAXINFO_SIZE];	/*!< the ciphers custom key */
 	size_t custlen;						/*!< the custom key array length */
 	bool encrypt;						/*!< the transformation mode; true for encryption */
-} qsc_rhx_hba512_state;
+} rhx_hba512_state;
 
 /**
 * \brief Dispose of the HBA cipher state
@@ -603,7 +591,7 @@ QSC_EXPORT_API typedef struct
 *
 * \param state: [struct] The HBA state structure; contains internal state information
 */
-QSC_EXPORT_API void qsc_rhx_hba512_dispose(qsc_rhx_hba512_state* state);
+RHX_EXPORT_API void rhx_hba512_dispose(rhx_hba512_state* state);
 
 /**
 * \brief Initialize the cipher and load the keying material.
@@ -615,7 +603,7 @@ QSC_EXPORT_API void qsc_rhx_hba512_dispose(qsc_rhx_hba512_state* state);
 * \param keyparams: [struct] The HBA key parameters, includes the key, and optional AAD and user info arrays
 * \param encrypt: The cipher encryption mode; true for encryption, false for decryption
 */
-QSC_EXPORT_API void qsc_rhx_hba512_initialize(qsc_rhx_hba512_state* state, const qsc_rhx_keyparams* keyparams, bool encrypt);
+RHX_EXPORT_API void rhx_hba512_initialize(rhx_hba512_state* state, const rhx_keyparams* keyparams, bool encrypt);
 
 /**
 * \brief Set the associated data string used in authenticating the message.
@@ -627,7 +615,7 @@ QSC_EXPORT_API void qsc_rhx_hba512_initialize(qsc_rhx_hba512_state* state, const
 * \param data: [const] The associated data array
 * \param datalen: The associated data array length
 */
-QSC_EXPORT_API void qsc_rhx_hba512_set_associated(qsc_rhx_hba512_state* state, const uint8_t* data, size_t datalen);
+RHX_EXPORT_API void rhx_hba512_set_associated(rhx_hba512_state* state, const uint8_t* data, size_t datalen);
 
 /**
 * \brief Transform an array of bytes using an instance of RHX-512.
@@ -643,6 +631,6 @@ QSC_EXPORT_API void qsc_rhx_hba512_set_associated(qsc_rhx_hba512_state* state, c
 *
 * \return: Returns true if the cipher has been transformed the data successfully, false on failure
 */
-QSC_EXPORT_API bool qsc_rhx_hba512_transform(qsc_rhx_hba512_state* state, uint8_t* output, const uint8_t* input, size_t inputlen);
+RHX_EXPORT_API bool rhx_hba512_transform(rhx_hba512_state* state, uint8_t* output, const uint8_t* input, size_t inputlen);
 
 #endif

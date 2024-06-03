@@ -19,44 +19,20 @@
     <ClCompile Include="cipher_speed.c">
       <Filter>Source Files\Test</Filter>
     </ClCompile>
-    <ClCompile Include="stringutils.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="sha3.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="sha2.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="selftest.c">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="rhx.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="memutils.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="intutils.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="csp.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="cpuidex.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="consoleutils.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="fileutils.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="timerex.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="testutils.c">
       <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="utils.c">
+      <Filter>Source Files\Support</Filter>
+    </ClCompile>
+    <ClCompile Include="hash.c">
+      <Filter>Source Files\Support</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -78,47 +54,20 @@
     <ClInclude Include="common.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="consoleutils.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="cpuidex.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="csp.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="intrinsics.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="intutils.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="memutils.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="rhx.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="selftest.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="sha2.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="sha3.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="stringutils.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="fileutils.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="timerex.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="testutils.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="utils.h">
+      <Filter>Header Files\Support</Filter>
+    </ClInclude>
+    <ClInclude Include="hash.h">
+      <Filter>Header Files\Support</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -133,6 +82,12 @@
     </Filter>
     <Filter Include="Source Files\Test">
       <UniqueIdentifier>{5777cbd0-a9aa-44d5-83e5-469413363332}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Support">
+      <UniqueIdentifier>{73e5b2bc-0884-4623-9bf6-cbb99dd2cded}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Support">
+      <UniqueIdentifier>{eb609bb3-b71f-4568-9380-a1e6a4492d4c}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

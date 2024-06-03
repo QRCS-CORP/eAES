@@ -1,25 +1,37 @@
+
+/* 2024 Quantum Resistant Cryptographic Solutions Corporation
+ * All Rights Reserved.
+ *
+ * NOTICE:  All information contained herein is, and remains
+ * the property of Quantum Resistant Cryptographic Solutions Incorporated.
+ * The intellectual and technical concepts contained
+ * herein are proprietary to Quantum Resistant Cryptographic Solutions Incorporated
+ * and its suppliers and may be covered by U.S. and Foreign Patents,
+ * patents in process, and are protected by trade secret or copyright law.
+ * Dissemination of this information or reproduction of this material
+ * is strictly forbidden unless prior written permission is obtained
+ * from Quantum Resistant Cryptographic Solutions Incorporated.
+ *
+ * Written by John G. Underhill
+ * Contact: develop@qrcs.ca
+ */
+
 #ifndef QSCTEST_TESTUTILS_H
 #define QSCTEST_TESTUTILS_H
 
 #include "common.h"
-/**
-* \file testutils.h
-* \brief Test support functions
-*/
 
 /**
 * \brief Get a single character from the console
-*
+* 
 * \return Returns the character detected
 */
-char qsctest_get_char(void);
+char qsctest_get_char();
 
 /**
 * \brief Pause the console until user input is detected
-*
-* \return Returns the character detected
 */
-uint8_t qsctest_get_wait(void);
+char qsctest_get_wait();
 
 /**
 * \brief Convert a hexadecimal character string to a binary byte array
@@ -31,43 +43,7 @@ uint8_t qsctest_get_wait(void);
 void qsctest_hex_to_bin(const char* hexstr, uint8_t* output, size_t length);
 
 /**
-* \brief Convert a uint16 array to a hexadecimal array, delineated with commas, and print to the console
-*
-* \param input: the uint16 array
-* \param inputlen: the number of bytes to process
-* \param linelen: the length of output to print, before starting a new line
-*/
-void qsctest_print_hex_uint16(const uint16_t* input, size_t inputlen, size_t linelen);
-
-/**
-* \brief Convert a uint32 array to a hexadecimal array, delineated with commas, and print to the console
-*
-* \param input: the uint32 array
-* \param inputlen: the number of bytes to process
-* \param linelen: the length of output to print, before starting a new line
-*/
-void qsctest_print_hex_uint32(const uint32_t* input, size_t inputlen, size_t linelen);
-
-/**
-* \brief Convert a uint64 array to a hexadecimal array, delineated with commas, and print to the console
-*
-* \param input: the uint64 array
-* \param inputlen: the number of bytes to process
-* \param linelen: the length of output to print, before starting a new line
-*/
-void qsctest_print_hex_uint64(const uint64_t* input, size_t inputlen, size_t linelen);
-
-/**
-* \brief Convert a binary array to a hexadecimal string, add quotation marks, and print to the console
-*
-* \param input: the binary array
-* \param inputlen: the number of bytes to process
-* \param linelen: the length of output to print, before starting a new line
-*/
-void qsctest_print_hex_quot(const uint8_t* input, size_t inputlen, size_t linelen);
-
-/**
-* \brief Convert a binary array to a hexadecimal string and print to the console
+* \brief Convert a binary array to a hexidecimal string and print to the console
 *
 * \param input: the binary array
 * \param inputlen: the number of bytes to process
@@ -102,14 +78,6 @@ void qsctest_print_ulong(uint64_t digit);
 * \param digit: the number to print
 */
 void qsctest_print_double(double digit);
-
-/**
-* \brief Generates a pseudo-random string containing only Ascii readable characters.
-*
-* \param output: the output string array
-* \param length: the length of the output string array
-*/
-bool qsctest_random_readable_string(char* output, size_t length);
 
 /**
 * \brief User confirmation that and action can continue(Y/N y/n)

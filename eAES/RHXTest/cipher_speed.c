@@ -1,7 +1,6 @@
 #include "cipher_speed.h"
 #include "testutils.h"
-#include "timerex.h"
-#include "csp.h"
+#include "utils.h"
 #include "rhx.h"
 
 /* bs*sc = 1GB */
@@ -12,35 +11,35 @@
 static void aes128_cbc_speed_test()
 {
 	uint8_t enc[BUFFER_SIZE] = { 0 };
-	uint8_t key[QSC_AES128_KEY_SIZE] = { 0 };
+	uint8_t key[RHX_AES128_KEY_SIZE] = { 0 };
 	uint8_t msg[BUFFER_SIZE] = { 0 };
-	uint8_t iv[QSC_RHX_BLOCK_SIZE] = { 0 };
-	qsc_rhx_state state;
+	uint8_t iv[RHX_BLOCK_SIZE] = { 0 };
+	rhx_state state;
 	size_t olen;
 	size_t tctr;
-	clock_t start;
+	uint64_t start;
 	uint64_t elapsed;
 
 	/* generate the message, key and iv */
-	qsc_csp_generate(key, sizeof(key));
-	qsc_csp_generate(iv, sizeof(iv));
-	qsc_csp_generate(msg, sizeof(msg));
-	qsc_rhx_keyparams kp = { key, sizeof(key), iv, NULL, 0 };
+	utils_seed_generate(key, sizeof(key));
+	utils_seed_generate(iv, sizeof(iv));
+	utils_seed_generate(msg, sizeof(msg));
+	rhx_keyparams kp = { key, sizeof(key), iv, NULL, 0 };
 
 	/* encryption */
 
 	tctr = 0;
-	start = qsc_timerex_stopwatch_start();
+	start = utils_stopwatch_start();
 
-	qsc_rhx_initialize(&state, &kp, true, AES128);
+	rhx_initialize(&state, &kp, true, AES128);
 
 	while (tctr < SAMPLE_COUNT)
 	{
-		qsc_rhx_cbc_encrypt(&state, enc, msg, sizeof(msg));
+		rhx_cbc_encrypt(&state, enc, msg, sizeof(msg));
 		++tctr;
 	}
 
-	elapsed = qsc_timerex_stopwatch_elapsed(start);
+	elapsed = utils_stopwatch_elapsed(start);
 	qsctest_print_safe("AES-128 CBC Encrypt processed 1GB of data in ");
 	qsctest_print_double((double)elapsed / 1000.0);
 	qsctest_print_line(" seconds");
@@ -48,56 +47,56 @@ static void aes128_cbc_speed_test()
 	/* decryption */
 
 	tctr = 0;
-	start = qsc_timerex_stopwatch_start();
+	start = utils_stopwatch_start();
 
-	qsc_rhx_initialize(&state, &kp, false, AES128);
+	rhx_initialize(&state, &kp, false, AES128);
 
 	while (tctr < SAMPLE_COUNT)
 	{
-		qsc_rhx_cbc_decrypt(&state, enc, &olen, msg, sizeof(msg));
+		rhx_cbc_decrypt(&state, enc, &olen, msg, sizeof(msg));
 		++tctr;
 	}
 
-	elapsed = qsc_timerex_stopwatch_elapsed(start);
+	elapsed = utils_stopwatch_elapsed(start);
 	qsctest_print_safe("AES-128 CBC Decrypt processed 1GB of data in ");
 	qsctest_print_double((double)elapsed / 1000.0);
 	qsctest_print_line(" seconds");
 
-	qsc_rhx_dispose(&state);
+	rhx_dispose(&state);
 }
 
 static void aes256_cbc_speed_test()
 {
 	uint8_t enc[BUFFER_SIZE] = { 0 };
-	uint8_t key[QSC_AES256_KEY_SIZE] = { 0 };
+	uint8_t key[RHX_AES256_KEY_SIZE] = { 0 };
 	uint8_t msg[BUFFER_SIZE] = { 0 };
-	uint8_t iv[QSC_RHX_BLOCK_SIZE] = { 0 };
-	qsc_rhx_state state;
+	uint8_t iv[RHX_BLOCK_SIZE] = { 0 };
+	rhx_state state;
 	size_t olen;
 	size_t tctr;
-	clock_t start;
+	uint64_t start;
 	uint64_t elapsed;
 
 	/* generate the message, key and iv */
-	qsc_csp_generate(key, sizeof(key));
-	qsc_csp_generate(iv, sizeof(iv));
-	qsc_csp_generate(msg, sizeof(msg));
-	qsc_rhx_keyparams kp = { key, sizeof(key), iv, NULL, 0 };
+	utils_seed_generate(key, sizeof(key));
+	utils_seed_generate(iv, sizeof(iv));
+	utils_seed_generate(msg, sizeof(msg));
+	rhx_keyparams kp = { key, sizeof(key), iv, NULL, 0 };
 
 	/* encryption */
 
 	tctr = 0;
-	start = qsc_timerex_stopwatch_start();
+	start = utils_stopwatch_start();
 
-	qsc_rhx_initialize(&state, &kp, true, AES256);
+	rhx_initialize(&state, &kp, true, AES256);
 
 	while (tctr < SAMPLE_COUNT)
 	{
-		qsc_rhx_cbc_encrypt(&state, enc, msg, sizeof(msg));
+		rhx_cbc_encrypt(&state, enc, msg, sizeof(msg));
 		++tctr;
 	}
 
-	elapsed = qsc_timerex_stopwatch_elapsed(start);
+	elapsed = utils_stopwatch_elapsed(start);
 	qsctest_print_safe("AES-256 CBC Encrypt processed 1GB of data in ");
 	qsctest_print_double((double)elapsed / 1000.0);
 	qsctest_print_line(" seconds");
@@ -105,56 +104,56 @@ static void aes256_cbc_speed_test()
 	/* decryption */
 
 	tctr = 0;
-	start = qsc_timerex_stopwatch_start();
+	start = utils_stopwatch_start();
 
-	qsc_rhx_initialize(&state, &kp, false, AES256);
+	rhx_initialize(&state, &kp, false, AES256);
 
 	while (tctr < SAMPLE_COUNT)
 	{
-		qsc_rhx_cbc_decrypt(&state, enc, &olen, msg, sizeof(msg));
+		rhx_cbc_decrypt(&state, enc, &olen, msg, sizeof(msg));
 		++tctr;
 	}
 
-	elapsed = qsc_timerex_stopwatch_elapsed(start);
+	elapsed = utils_stopwatch_elapsed(start);
 	qsctest_print_safe("AES-256 CBC Decrypt processed 1GB of data in ");
 	qsctest_print_double((double)elapsed / 1000.0);
 	qsctest_print_line(" seconds");
 
-	qsc_rhx_dispose(&state);
+	rhx_dispose(&state);
 }
 
 static void rhx256_cbc_speed_test()
 {
 	uint8_t enc[BUFFER_SIZE] = { 0 };
-	uint8_t key[QSC_RHX256_KEY_SIZE] = { 0 };
+	uint8_t key[RHX_RHX256_KEY_SIZE] = { 0 };
 	uint8_t msg[BUFFER_SIZE] = { 0 };
-	uint8_t iv[QSC_RHX_BLOCK_SIZE] = { 0 };
-	qsc_rhx_state state;
+	uint8_t iv[RHX_BLOCK_SIZE] = { 0 };
+	rhx_state state;
 	size_t olen;
 	size_t tctr;
-	clock_t start;
+	uint64_t start;
 	uint64_t elapsed;
 
 	/* generate the message, key and iv */
-	qsc_csp_generate(key, sizeof(key));
-	qsc_csp_generate(iv, sizeof(iv));
-	qsc_csp_generate(msg, sizeof(msg));
-	qsc_rhx_keyparams kp = { key, sizeof(key), iv, NULL, 0 };
+	utils_seed_generate(key, sizeof(key));
+	utils_seed_generate(iv, sizeof(iv));
+	utils_seed_generate(msg, sizeof(msg));
+	rhx_keyparams kp = { key, sizeof(key), iv, NULL, 0 };
 
 	/* encryption */
 
 	tctr = 0;
-	start = qsc_timerex_stopwatch_start();
+	start = utils_stopwatch_start();
 
-	qsc_rhx_initialize(&state, &kp, true, RHX256);
+	rhx_initialize(&state, &kp, true, RHX256);
 
 	while (tctr < SAMPLE_COUNT)
 	{
-		qsc_rhx_cbc_encrypt(&state, enc, msg, sizeof(msg));
+		rhx_cbc_encrypt(&state, enc, msg, sizeof(msg));
 		++tctr;
 	}
 
-	elapsed = qsc_timerex_stopwatch_elapsed(start);
+	elapsed = utils_stopwatch_elapsed(start);
 	qsctest_print_safe("RHX-256 CBC Encrypt processed 1GB of data in ");
 	qsctest_print_double((double)elapsed / 1000.0);
 	qsctest_print_line(" seconds");
@@ -162,56 +161,56 @@ static void rhx256_cbc_speed_test()
 	/* decryption */
 
 	tctr = 0;
-	start = qsc_timerex_stopwatch_start();
+	start = utils_stopwatch_start();
 
-	qsc_rhx_initialize(&state, &kp, false, RHX256);
+	rhx_initialize(&state, &kp, false, RHX256);
 
 	while (tctr < SAMPLE_COUNT)
 	{
-		qsc_rhx_cbc_decrypt(&state, enc, &olen, msg, sizeof(msg));
+		rhx_cbc_decrypt(&state, enc, &olen, msg, sizeof(msg));
 		++tctr;
 	}
 
-	elapsed = qsc_timerex_stopwatch_elapsed(start);
+	elapsed = utils_stopwatch_elapsed(start);
 	qsctest_print_safe("RHX-256 CBC Decrypt processed 1GB of data in ");
 	qsctest_print_double((double)elapsed / 1000.0);
 	qsctest_print_line(" seconds");
 
-	qsc_rhx_dispose(&state);
+	rhx_dispose(&state);
 }
 
 static void rhx512_cbc_speed_test()
 {
 	uint8_t enc[BUFFER_SIZE] = { 0 };
-	uint8_t key[QSC_RHX512_KEY_SIZE] = { 0 };
+	uint8_t key[RHX_RHX512_KEY_SIZE] = { 0 };
 	uint8_t msg[BUFFER_SIZE] = { 0 };
-	uint8_t iv[QSC_RHX_BLOCK_SIZE] = { 0 };
-	qsc_rhx_state state;
+	uint8_t iv[RHX_BLOCK_SIZE] = { 0 };
+	rhx_state state;
 	size_t olen;
 	size_t tctr;
-	clock_t start;
+	uint64_t start;
 	uint64_t elapsed;
 
 	/* generate the message, key and iv */
-	qsc_csp_generate(key, sizeof(key));
-	qsc_csp_generate(iv, sizeof(iv));
-	qsc_csp_generate(msg, sizeof(msg));
-	qsc_rhx_keyparams kp = { key, sizeof(key), iv, NULL, 0 };
+	utils_seed_generate(key, sizeof(key));
+	utils_seed_generate(iv, sizeof(iv));
+	utils_seed_generate(msg, sizeof(msg));
+	rhx_keyparams kp = { key, sizeof(key), iv, NULL, 0 };
 
 	/* encryption */
 
 	tctr = 0;
-	start = qsc_timerex_stopwatch_start();
+	start = utils_stopwatch_start();
 
-	qsc_rhx_initialize(&state, &kp, true, RHX512);
+	rhx_initialize(&state, &kp, true, RHX512);
 
 	while (tctr < SAMPLE_COUNT)
 	{
-		qsc_rhx_cbc_encrypt(&state, enc, msg, sizeof(msg));
+		rhx_cbc_encrypt(&state, enc, msg, sizeof(msg));
 		++tctr;
 	}
 
-	elapsed = qsc_timerex_stopwatch_elapsed(start);
+	elapsed = utils_stopwatch_elapsed(start);
 	qsctest_print_safe("RHX-512 CBC Encrypt processed 1GB of data in ");
 	qsctest_print_double((double)elapsed / 1000.0);
 	qsctest_print_line(" seconds");
@@ -219,55 +218,55 @@ static void rhx512_cbc_speed_test()
 	/* decryption */
 
 	tctr = 0;
-	start = qsc_timerex_stopwatch_start();
+	start = utils_stopwatch_start();
 
-	qsc_rhx_initialize(&state, &kp, false, RHX512);
+	rhx_initialize(&state, &kp, false, RHX512);
 
 	while (tctr < SAMPLE_COUNT)
 	{
-		qsc_rhx_cbc_decrypt(&state, enc, &olen, msg, sizeof(msg));
+		rhx_cbc_decrypt(&state, enc, &olen, msg, sizeof(msg));
 		++tctr;
 	}
 
-	elapsed = qsc_timerex_stopwatch_elapsed(start);
+	elapsed = utils_stopwatch_elapsed(start);
 	qsctest_print_safe("RHX-512 CBC Decrypt processed 1GB of data in ");
 	qsctest_print_double((double)elapsed / 1000.0);
 	qsctest_print_line(" seconds");
 
-	qsc_rhx_dispose(&state);
+	rhx_dispose(&state);
 }
 
 static void aes128_ctrbe_speed_test()
 {
 	uint8_t enc[BUFFER_SIZE] = { 0 };
-	uint8_t key[QSC_AES128_KEY_SIZE] = { 0 };
+	uint8_t key[RHX_AES128_KEY_SIZE] = { 0 };
 	uint8_t msg[BUFFER_SIZE] = { 0 };
-	uint8_t iv[QSC_RHX_BLOCK_SIZE] = { 0 };
-	qsc_rhx_state state;
+	uint8_t iv[RHX_BLOCK_SIZE] = { 0 };
+	rhx_state state;
 	size_t tctr;
-	clock_t start;
+	uint64_t start;
 	uint64_t elapsed;
 
 	/* generate the message, key and iv */
-	qsc_csp_generate(key, sizeof(key));
-	qsc_csp_generate(iv, sizeof(iv));
-	qsc_csp_generate(msg, sizeof(msg));
-	qsc_rhx_keyparams kp = { key, sizeof(key), iv, NULL, 0 };
+	utils_seed_generate(key, sizeof(key));
+	utils_seed_generate(iv, sizeof(iv));
+	utils_seed_generate(msg, sizeof(msg));
+	rhx_keyparams kp = { key, sizeof(key), iv, NULL, 0 };
 
 	/* encryption */
 
 	tctr = 0;
-	start = qsc_timerex_stopwatch_start();
+	start = utils_stopwatch_start();
 
-	qsc_rhx_initialize(&state, &kp, true, AES128);
+	rhx_initialize(&state, &kp, true, AES128);
 
 	while (tctr < SAMPLE_COUNT)
 	{
-		qsc_rhx_ctrbe_transform(&state, enc, msg, sizeof(msg));
+		rhx_ctrbe_transform(&state, enc, msg, sizeof(msg));
 		++tctr;
 	}
 
-	elapsed = qsc_timerex_stopwatch_elapsed(start);
+	elapsed = utils_stopwatch_elapsed(start);
 	qsctest_print_safe("AES-128 CTR-BE processed 1GB of data in ");
 	qsctest_print_double((double)elapsed / 1000.0);
 	qsctest_print_line(" seconds");
@@ -276,34 +275,34 @@ static void aes128_ctrbe_speed_test()
 static void aes128_ctrle_speed_test()
 {
 	uint8_t enc[BUFFER_SIZE] = { 0 };
-	uint8_t key[QSC_AES128_KEY_SIZE] = { 0 };
+	uint8_t key[RHX_AES128_KEY_SIZE] = { 0 };
 	uint8_t msg[BUFFER_SIZE] = { 0 };
-	uint8_t iv[QSC_RHX_BLOCK_SIZE] = { 0 };
-	qsc_rhx_state state;
+	uint8_t iv[RHX_BLOCK_SIZE] = { 0 };
+	rhx_state state;
 	size_t tctr;
-	clock_t start;
+	uint64_t start;
 	uint64_t elapsed;
 
 	/* generate the message, key and iv */
-	qsc_csp_generate(key, sizeof(key));
-	qsc_csp_generate(iv, sizeof(iv));
-	qsc_csp_generate(msg, sizeof(msg));
-	qsc_rhx_keyparams kp = { key, sizeof(key), iv, NULL, 0 };
+	utils_seed_generate(key, sizeof(key));
+	utils_seed_generate(iv, sizeof(iv));
+	utils_seed_generate(msg, sizeof(msg));
+	rhx_keyparams kp = { key, sizeof(key), iv, NULL, 0 };
 
 	/* encryption */
 
 	tctr = 0;
-	start = qsc_timerex_stopwatch_start();
+	start = utils_stopwatch_start();
 
-	qsc_rhx_initialize(&state, &kp, true, AES128);
+	rhx_initialize(&state, &kp, true, AES128);
 
 	while (tctr < SAMPLE_COUNT)
 	{
-		qsc_rhx_ctrle_transform(&state, enc, msg, sizeof(msg));
+		rhx_ctrle_transform(&state, enc, msg, sizeof(msg));
 		++tctr;
 	}
 
-	elapsed = qsc_timerex_stopwatch_elapsed(start);
+	elapsed = utils_stopwatch_elapsed(start);
 	qsctest_print_safe("AES-128 CTR-LE processed 1GB of data in ");
 	qsctest_print_double((double)elapsed / 1000.0);
 	qsctest_print_line(" seconds");
@@ -312,34 +311,34 @@ static void aes128_ctrle_speed_test()
 static void aes256_ctrbe_speed_test()
 {
 	uint8_t enc[BUFFER_SIZE] = { 0 };
-	uint8_t key[QSC_AES256_KEY_SIZE] = { 0 };
+	uint8_t key[RHX_AES256_KEY_SIZE] = { 0 };
 	uint8_t msg[BUFFER_SIZE] = { 0 };
-	uint8_t iv[QSC_RHX_BLOCK_SIZE] = { 0 };
-	qsc_rhx_state state;
+	uint8_t iv[RHX_BLOCK_SIZE] = { 0 };
+	rhx_state state;
 	size_t tctr;
-	clock_t start;
+	uint64_t start;
 	uint64_t elapsed;
 
 	/* generate the message, key and iv */
-	qsc_csp_generate(key, sizeof(key));
-	qsc_csp_generate(iv, sizeof(iv));
-	qsc_csp_generate(msg, sizeof(msg));
-	qsc_rhx_keyparams kp = { key, sizeof(key), iv, NULL, 0 };
+	utils_seed_generate(key, sizeof(key));
+	utils_seed_generate(iv, sizeof(iv));
+	utils_seed_generate(msg, sizeof(msg));
+	rhx_keyparams kp = { key, sizeof(key), iv, NULL, 0 };
 
 	/* encryption */
 
 	tctr = 0;
-	start = qsc_timerex_stopwatch_start();
+	start = utils_stopwatch_start();
 
-	qsc_rhx_initialize(&state, &kp, true, AES256);
+	rhx_initialize(&state, &kp, true, AES256);
 
 	while (tctr < SAMPLE_COUNT)
 	{
-		qsc_rhx_ctrbe_transform(&state, enc, msg, sizeof(msg));
+		rhx_ctrbe_transform(&state, enc, msg, sizeof(msg));
 		++tctr;
 	}
 
-	elapsed = qsc_timerex_stopwatch_elapsed(start);
+	elapsed = utils_stopwatch_elapsed(start);
 	qsctest_print_safe("AES-256 CTR-BE processed 1GB of data in ");
 	qsctest_print_double((double)elapsed / 1000.0);
 	qsctest_print_line(" seconds");
@@ -348,34 +347,34 @@ static void aes256_ctrbe_speed_test()
 static void aes256_ctrle_speed_test()
 {
 	uint8_t enc[BUFFER_SIZE] = { 0 };
-	uint8_t key[QSC_AES256_KEY_SIZE] = { 0 };
+	uint8_t key[RHX_AES256_KEY_SIZE] = { 0 };
 	uint8_t msg[BUFFER_SIZE] = { 0 };
-	uint8_t iv[QSC_RHX_BLOCK_SIZE] = { 0 };
-	qsc_rhx_state state;
+	uint8_t iv[RHX_BLOCK_SIZE] = { 0 };
+	rhx_state state;
 	size_t tctr;
-	clock_t start;
+	uint64_t start;
 	uint64_t elapsed;
 
 	/* generate the message, key and iv */
-	qsc_csp_generate(key, sizeof(key));
-	qsc_csp_generate(iv, sizeof(iv));
-	qsc_csp_generate(msg, sizeof(msg));
-	qsc_rhx_keyparams kp = { key, sizeof(key), iv, NULL, 0 };
+	utils_seed_generate(key, sizeof(key));
+	utils_seed_generate(iv, sizeof(iv));
+	utils_seed_generate(msg, sizeof(msg));
+	rhx_keyparams kp = { key, sizeof(key), iv, NULL, 0 };
 
 	/* encryption */
 
 	tctr = 0;
-	start = qsc_timerex_stopwatch_start();
+	start = utils_stopwatch_start();
 
-	qsc_rhx_initialize(&state, &kp, true, AES256);
+	rhx_initialize(&state, &kp, true, AES256);
 
 	while (tctr < SAMPLE_COUNT)
 	{
-		qsc_rhx_ctrle_transform(&state, enc, msg, sizeof(msg));
+		rhx_ctrle_transform(&state, enc, msg, sizeof(msg));
 		++tctr;
 	}
 
-	elapsed = qsc_timerex_stopwatch_elapsed(start);
+	elapsed = utils_stopwatch_elapsed(start);
 	qsctest_print_safe("AES-256 CTR-LE processed 1GB of data in ");
 	qsctest_print_double((double)elapsed / 1000.0);
 	qsctest_print_line(" seconds");
@@ -384,34 +383,34 @@ static void aes256_ctrle_speed_test()
 static void rhx256_ctrbe_speed_test()
 {
 	uint8_t enc[BUFFER_SIZE] = { 0 };
-	uint8_t key[QSC_RHX256_KEY_SIZE] = { 0 };
+	uint8_t key[RHX_RHX256_KEY_SIZE] = { 0 };
 	uint8_t msg[BUFFER_SIZE] = { 0 };
-	uint8_t iv[QSC_RHX_BLOCK_SIZE] = { 0 };
-	qsc_rhx_state state;
+	uint8_t iv[RHX_BLOCK_SIZE] = { 0 };
+	rhx_state state;
 	size_t tctr;
-	clock_t start;
+	uint64_t start;
 	uint64_t elapsed;
 
 	/* generate the message, key and iv */
-	qsc_csp_generate(key, sizeof(key));
-	qsc_csp_generate(iv, sizeof(iv));
-	qsc_csp_generate(msg, sizeof(msg));
-	qsc_rhx_keyparams kp = { key, sizeof(key), iv, NULL, 0 };
+	utils_seed_generate(key, sizeof(key));
+	utils_seed_generate(iv, sizeof(iv));
+	utils_seed_generate(msg, sizeof(msg));
+	rhx_keyparams kp = { key, sizeof(key), iv, NULL, 0 };
 
 	/* encryption */
 
 	tctr = 0;
-	start = qsc_timerex_stopwatch_start();
+	start = utils_stopwatch_start();
 
-	qsc_rhx_initialize(&state, &kp, true, RHX256);
+	rhx_initialize(&state, &kp, true, RHX256);
 
 	while (tctr < SAMPLE_COUNT)
 	{
-		qsc_rhx_ctrbe_transform(&state, enc, msg, sizeof(msg));
+		rhx_ctrbe_transform(&state, enc, msg, sizeof(msg));
 		++tctr;
 	}
 
-	elapsed = qsc_timerex_stopwatch_elapsed(start);
+	elapsed = utils_stopwatch_elapsed(start);
 	qsctest_print_safe("RHX-256 CTR-BE processed 1GB of data in ");
 	qsctest_print_double((double)elapsed / 1000.0);
 	qsctest_print_line(" seconds");
@@ -420,34 +419,34 @@ static void rhx256_ctrbe_speed_test()
 static void rhx256_ctrle_speed_test()
 {
 	uint8_t enc[BUFFER_SIZE] = { 0 };
-	uint8_t key[QSC_RHX256_KEY_SIZE] = { 0 };
+	uint8_t key[RHX_RHX256_KEY_SIZE] = { 0 };
 	uint8_t msg[BUFFER_SIZE] = { 0 };
-	uint8_t iv[QSC_RHX_BLOCK_SIZE] = { 0 };
-	qsc_rhx_state state;
+	uint8_t iv[RHX_BLOCK_SIZE] = { 0 };
+	rhx_state state;
 	size_t tctr;
-	clock_t start;
+	uint64_t start;
 	uint64_t elapsed;
 
 	/* generate the message, key and iv */
-	qsc_csp_generate(key, sizeof(key));
-	qsc_csp_generate(iv, sizeof(iv));
-	qsc_csp_generate(msg, sizeof(msg));
-	qsc_rhx_keyparams kp = { key, sizeof(key), iv, NULL, 0 };
+	utils_seed_generate(key, sizeof(key));
+	utils_seed_generate(iv, sizeof(iv));
+	utils_seed_generate(msg, sizeof(msg));
+	rhx_keyparams kp = { key, sizeof(key), iv, NULL, 0 };
 
 	/* encryption */
 
 	tctr = 0;
-	start = qsc_timerex_stopwatch_start();
+	start = utils_stopwatch_start();
 
-	qsc_rhx_initialize(&state, &kp, true, RHX256);
+	rhx_initialize(&state, &kp, true, RHX256);
 
 	while (tctr < SAMPLE_COUNT)
 	{
-		qsc_rhx_ctrle_transform(&state, enc, msg, sizeof(msg));
+		rhx_ctrle_transform(&state, enc, msg, sizeof(msg));
 		++tctr;
 	}
 
-	elapsed = qsc_timerex_stopwatch_elapsed(start);
+	elapsed = utils_stopwatch_elapsed(start);
 	qsctest_print_safe("RHX-256 CTR-LE processed 1GB of data in ");
 	qsctest_print_double((double)elapsed / 1000.0);
 	qsctest_print_line(" seconds");
@@ -456,34 +455,34 @@ static void rhx256_ctrle_speed_test()
 static void rhx512_ctrbe_speed_test()
 {
 	uint8_t enc[BUFFER_SIZE] = { 0 };
-	uint8_t key[QSC_RHX512_KEY_SIZE] = { 0 };
+	uint8_t key[RHX_RHX512_KEY_SIZE] = { 0 };
 	uint8_t msg[BUFFER_SIZE] = { 0 };
-	uint8_t iv[QSC_RHX_BLOCK_SIZE] = { 0 };
-	qsc_rhx_state state;
+	uint8_t iv[RHX_BLOCK_SIZE] = { 0 };
+	rhx_state state;
 	size_t tctr;
-	clock_t start;
+	uint64_t start;
 	uint64_t elapsed;
 
 	/* generate the message, key and iv */
-	qsc_csp_generate(key, sizeof(key));
-	qsc_csp_generate(iv, sizeof(iv));
-	qsc_csp_generate(msg, sizeof(msg));
-	qsc_rhx_keyparams kp = { key, sizeof(key), iv, NULL, 0 };
+	utils_seed_generate(key, sizeof(key));
+	utils_seed_generate(iv, sizeof(iv));
+	utils_seed_generate(msg, sizeof(msg));
+	rhx_keyparams kp = { key, sizeof(key), iv, NULL, 0 };
 
 	/* encryption */
 
 	tctr = 0;
-	start = qsc_timerex_stopwatch_start();
+	start = utils_stopwatch_start();
 
-	qsc_rhx_initialize(&state, &kp, true, RHX512);
+	rhx_initialize(&state, &kp, true, RHX512);
 
 	while (tctr < SAMPLE_COUNT)
 	{
-		qsc_rhx_ctrle_transform(&state, enc, msg, sizeof(msg));
+		rhx_ctrle_transform(&state, enc, msg, sizeof(msg));
 		++tctr;
 	}
 
-	elapsed = qsc_timerex_stopwatch_elapsed(start);
+	elapsed = utils_stopwatch_elapsed(start);
 	qsctest_print_safe("RHX-512 CTR-BE processed 1GB of data in ");
 	qsctest_print_double((double)elapsed / 1000.0);
 	qsctest_print_line(" seconds");
@@ -492,34 +491,34 @@ static void rhx512_ctrbe_speed_test()
 static void rhx512_ctrle_speed_test()
 {
 	uint8_t enc[BUFFER_SIZE] = { 0 };
-	uint8_t key[QSC_RHX512_KEY_SIZE] = { 0 };
+	uint8_t key[RHX_RHX512_KEY_SIZE] = { 0 };
 	uint8_t msg[BUFFER_SIZE] = { 0 };
-	uint8_t iv[QSC_RHX_BLOCK_SIZE] = { 0 };
-	qsc_rhx_state state;
+	uint8_t iv[RHX_BLOCK_SIZE] = { 0 };
+	rhx_state state;
 	size_t tctr;
-	clock_t start;
+	uint64_t start;
 	uint64_t elapsed;
 
 	/* generate the message, key and iv */
-	qsc_csp_generate(key, sizeof(key));
-	qsc_csp_generate(iv, sizeof(iv));
-	qsc_csp_generate(msg, sizeof(msg));
-	qsc_rhx_keyparams kp = { key, sizeof(key), iv, NULL, 0 };
+	utils_seed_generate(key, sizeof(key));
+	utils_seed_generate(iv, sizeof(iv));
+	utils_seed_generate(msg, sizeof(msg));
+	rhx_keyparams kp = { key, sizeof(key), iv, NULL, 0 };
 
 	/* encryption */
 
 	tctr = 0;
-	start = qsc_timerex_stopwatch_start();
+	start = utils_stopwatch_start();
 
-	qsc_rhx_initialize(&state, &kp, true, RHX512);
+	rhx_initialize(&state, &kp, true, RHX512);
 
 	while (tctr < SAMPLE_COUNT)
 	{
-		qsc_rhx_ctrle_transform(&state, enc, msg, sizeof(msg));
+		rhx_ctrle_transform(&state, enc, msg, sizeof(msg));
 		++tctr;
 	}
 
-	elapsed = qsc_timerex_stopwatch_elapsed(start);
+	elapsed = utils_stopwatch_elapsed(start);
 	qsctest_print_safe("RHX-512 CTR-LE processed 1GB of data in ");
 	qsctest_print_double((double)elapsed / 1000.0);
 	qsctest_print_line(" seconds");
@@ -527,35 +526,35 @@ static void rhx512_ctrle_speed_test()
 
 static void rhx256_hba_speed_test()
 {
-	uint8_t enc[BUFFER_SIZE + QSC_HBA256_MAC_LENGTH] = { 0 };
-	uint8_t key[QSC_RHX256_KEY_SIZE] = { 0 };
+	uint8_t enc[BUFFER_SIZE + RHX_HBA256_MAC_LENGTH] = { 0 };
+	uint8_t key[RHX_RHX256_KEY_SIZE] = { 0 };
 	uint8_t msg[BUFFER_SIZE] = { 0 };
-	uint8_t iv[QSC_RHX_BLOCK_SIZE] = { 0 };
-	qsc_rhx_hba256_state state;
+	uint8_t iv[RHX_BLOCK_SIZE] = { 0 };
+	rhx_hba256_state state;
 	size_t tctr;
-	clock_t start;
+	uint64_t start;
 	uint64_t elapsed;
 
 	/* generate the message, key and iv */
-	qsc_csp_generate(key, sizeof(key));
-	qsc_csp_generate(iv, sizeof(iv));
-	qsc_csp_generate(msg, sizeof(msg));
-	qsc_rhx_keyparams kp = { key, sizeof(key), iv, NULL, 0 };
+	utils_seed_generate(key, sizeof(key));
+	utils_seed_generate(iv, sizeof(iv));
+	utils_seed_generate(msg, sizeof(msg));
+	rhx_keyparams kp = { key, sizeof(key), iv, NULL, 0 };
 
 	/* encryption */
 
 	tctr = 0;
-	start = qsc_timerex_stopwatch_start();
+	start = utils_stopwatch_start();
 
-	qsc_rhx_hba256_initialize(&state, &kp, true);
+	rhx_hba256_initialize(&state, &kp, true);
 
 	while (tctr < SAMPLE_COUNT)
 	{
-		qsc_rhx_hba256_transform(&state, enc, msg, sizeof(msg));
+		rhx_hba256_transform(&state, enc, msg, sizeof(msg));
 		++tctr;
 	}
 
-	elapsed = qsc_timerex_stopwatch_elapsed(start);
+	elapsed = utils_stopwatch_elapsed(start);
 	qsctest_print_safe("RHX-256 HBA Encryption processed 1GB of data in ");
 	qsctest_print_double((double)elapsed / 1000.0);
 	qsctest_print_line(" seconds");
@@ -563,35 +562,35 @@ static void rhx256_hba_speed_test()
 
 static void rhx512_hba_speed_test()
 {
-	uint8_t enc[BUFFER_SIZE + QSC_HBA512_MAC_LENGTH] = { 0 };
-	uint8_t key[QSC_RHX512_KEY_SIZE] = { 0 };
+	uint8_t enc[BUFFER_SIZE + RHX_HBA512_MAC_LENGTH] = { 0 };
+	uint8_t key[RHX_RHX512_KEY_SIZE] = { 0 };
 	uint8_t msg[BUFFER_SIZE] = { 0 };
-	uint8_t iv[QSC_RHX_BLOCK_SIZE] = { 0 };
-	qsc_rhx_hba512_state state;
+	uint8_t iv[RHX_BLOCK_SIZE] = { 0 };
+	rhx_hba512_state state;
 	size_t tctr;
-	clock_t start;
+	uint64_t start;
 	uint64_t elapsed;
 
 	/* generate the message, key and iv */
-	qsc_csp_generate(key, sizeof(key));
-	qsc_csp_generate(iv, sizeof(iv));
-	qsc_csp_generate(msg, sizeof(msg));
-	qsc_rhx_keyparams kp = { key, sizeof(key), iv, NULL, 0 };
+	utils_seed_generate(key, sizeof(key));
+	utils_seed_generate(iv, sizeof(iv));
+	utils_seed_generate(msg, sizeof(msg));
+	rhx_keyparams kp = { key, sizeof(key), iv, NULL, 0 };
 
 	/* encryption */
 
 	tctr = 0;
-	start = qsc_timerex_stopwatch_start();
+	start = utils_stopwatch_start();
 
-	qsc_rhx_hba512_initialize(&state, &kp, true);
+	rhx_hba512_initialize(&state, &kp, true);
 
 	while (tctr < SAMPLE_COUNT)
 	{
-		qsc_rhx_hba512_transform(&state, enc, msg, sizeof(msg));
+		rhx_hba512_transform(&state, enc, msg, sizeof(msg));
 		++tctr;
 	}
 
-	elapsed = qsc_timerex_stopwatch_elapsed(start);
+	elapsed = utils_stopwatch_elapsed(start);
 	qsctest_print_safe("RHX-512 HBA Encryption processed 1GB of data in ");
 	qsctest_print_double((double)elapsed / 1000.0);
 	qsctest_print_line(" seconds");

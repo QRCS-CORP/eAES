@@ -1,12 +1,1034 @@
-#include "sha2.h"
-#include "intrinsics.h"
-#include "intutils.h"
-#include "memutils.h"
+#include "hash.h"
+#include "utils.h"
+
+/* SHA3 */
+
+/* keccak round constants */
+static const uint64_t KECCAK_ROUND_CONSTANTS[KECCAK_PERMUTATION_MAX_ROUNDS] =
+{
+	0x0000000000000001ULL, 0x0000000000008082ULL, 0x800000000000808AULL, 0x8000000080008000ULL,
+	0x000000000000808BULL, 0x0000000080000001ULL, 0x8000000080008081ULL, 0x8000000000008009ULL,
+	0x000000000000008AULL, 0x0000000000000088ULL, 0x0000000080008009ULL, 0x000000008000000AULL,
+	0x000000008000808BULL, 0x800000000000008BULL, 0x8000000000008089ULL, 0x8000000000008003ULL,
+	0x8000000000008002ULL, 0x8000000000000080ULL, 0x000000000000800AULL, 0x800000008000000AULL,
+	0x8000000080008081ULL, 0x8000000000008080ULL, 0x0000000080000001ULL, 0x8000000080008008ULL,
+	0x8000000080008082ULL, 0x800000008000800AULL, 0x8000000000000003ULL, 0x8000000080000009ULL,
+	0x8000000000008082ULL, 0x0000000000008009ULL, 0x8000000000000080ULL, 0x0000000000008083ULL,
+	0x8000000000000081ULL, 0x0000000000000001ULL, 0x000000000000800BULL, 0x8000000080008001ULL,
+	0x0000000000000080ULL, 0x8000000000008000ULL, 0x8000000080008001ULL, 0x0000000000000009ULL,
+	0x800000008000808BULL, 0x0000000000000081ULL, 0x8000000000000082ULL, 0x000000008000008BULL,
+	0x8000000080008009ULL, 0x8000000080000000ULL, 0x0000000080000080ULL, 0x0000000080008003ULL
+};
+
+static void keccak_fast_absorb(uint64_t* state, const uint8_t* message, size_t msglen)
+{
+#if defined(SYSTEM_IS_LITTLE_ENDIAN)
+	utils_memory_xor((uint8_t*)state, message, msglen);
+#else
+	for (size_t i = 0; i < msglen / sizeof(uint64_t); ++i)
+	{
+		state[i] ^= utils_integer_le8to64((message + (sizeof(uint64_t) * i)));
+	}
+#endif
+}
+
+static size_t keccak_left_encode(uint8_t* buffer, size_t value)
+{
+	size_t n;
+	size_t v;
+
+	for (v = value, n = 0; v != 0 && n < sizeof(size_t); ++n, v >>= 8) { /* increments n */ }
+
+	if (n == 0)
+	{
+		n = 1;
+	}
+
+	for (size_t i = 1; i <= n; ++i)
+	{
+		buffer[i] = (uint8_t)(value >> (8 * (n - i)));
+	}
+
+	buffer[0] = (uint8_t)n;
+
+	return n + 1;
+}
+
+static size_t keccak_right_encode(uint8_t* buffer, size_t value)
+{
+	size_t n;
+	size_t v;
+
+	for (v = value, n = 0; v != 0 && (n < sizeof(size_t)); ++n, v >>= 8) { /* increments n */ }
+
+	if (n == 0)
+	{
+		n = 1;
+	}
+
+	for (size_t i = 1; i <= n; ++i)
+	{
+		buffer[i - 1] = (uint8_t)(value >> (8 * (n - i)));
+	}
+
+	buffer[n] = (uint8_t)n;
+
+	return n + 1;
+}
+
+/* Keccak */
+
+void keccak_absorb(keccak_state* ctx, keccak_rate rate, const uint8_t* message, size_t msglen, uint8_t domain, size_t rounds)
+{
+	assert(ctx != NULL);
+	assert(message != NULL);
+
+	if (ctx != NULL && message != NULL)
+	{
+		uint8_t msg[KECCAK_STATE_BYTE_SIZE];
+
+		while (msglen >= (size_t)rate)
+		{
+#if defined(SYSTEM_IS_LITTLE_ENDIAN)
+			utils_memory_xor((uint8_t*)ctx->state, message, rate);
+#else
+			for (size_t i = 0; i < rate / sizeof(uint64_t); ++i)
+			{
+				ctx->state[i] ^= utils_integer_le8to64((message + (sizeof(uint64_t) * i)));
+			}
+#endif
+			keccak_permute(ctx, rounds);
+			msglen -= rate;
+			message += rate;
+	}
+
+		utils_memory_copy(msg, message, msglen);
+		msg[msglen] = domain;
+		utils_memory_clear((msg + msglen + 1), rate - msglen + 1);
+		msg[rate - 1] |= 128U;
+
+#if defined(SYSTEM_IS_LITTLE_ENDIAN)
+		utils_memory_xor((uint8_t*)ctx->state, msg, rate);
+#else
+		for (size_t i = 0; i < rate / 8; ++i)
+		{
+			ctx->state[i] ^= utils_integer_le8to64((msg + (8 * i)));
+		}
+#endif
+	}
+}
+
+void keccak_absorb_custom(keccak_state* ctx, keccak_rate rate, const uint8_t* custom, size_t custlen, const uint8_t* name, size_t namelen, size_t rounds)
+{
+	assert(ctx != NULL);
+
+	uint8_t pad[KECCAK_STATE_BYTE_SIZE] = { 0 };
+	size_t i;
+	size_t oft;
+
+	oft = keccak_left_encode(pad, rate);
+	oft += keccak_left_encode((pad + oft), namelen * 8);
+
+	if (name != NULL)
+	{
+		for (i = 0; i < namelen; ++i)
+		{
+			if (oft == rate)
+			{
+				keccak_fast_absorb(ctx->state, pad, rate);
+				keccak_permute(ctx, rounds);
+				oft = 0;
+			}
+
+			pad[oft] = name[i];
+			++oft;
+		}
+	}
+
+	oft += keccak_left_encode((pad + oft), custlen * 8);
+
+	if (custom != NULL)
+	{
+		for (i = 0; i < custlen; ++i)
+		{
+			if (oft == rate)
+			{
+				keccak_fast_absorb(ctx->state, pad, rate);
+				keccak_permute(ctx, rounds);
+				oft = 0;
+			}
+
+			pad[oft] = custom[i];
+			++oft;
+		}
+	}
+
+	utils_memory_clear((pad + oft), rate - oft);
+	keccak_fast_absorb(ctx->state, pad, rate);
+	keccak_permute(ctx, rounds);
+}
+
+void keccak_absorb_key_custom(keccak_state* ctx, keccak_rate rate, const uint8_t* key, size_t keylen, const uint8_t* custom, size_t custlen, const uint8_t* name, size_t namelen, size_t rounds)
+{
+	assert(ctx != NULL);
+
+	uint8_t pad[KECCAK_STATE_BYTE_SIZE] = { 0 };
+	size_t oft;
+	size_t i;
+
+	utils_memory_clear((uint8_t*)ctx->state, sizeof(ctx->state));
+	utils_memory_clear(ctx->buffer, sizeof(ctx->buffer));
+	ctx->position = 0;
+
+	/* stage 1: name + custom */
+
+	oft = keccak_left_encode(pad, rate);
+	oft += keccak_left_encode((pad + oft), namelen * 8);
+
+	if (name != NULL)
+	{
+		for (i = 0; i < namelen; ++i)
+		{
+			pad[oft + i] = name[i];
+		}
+	}
+
+	oft += namelen;
+	oft += keccak_left_encode((pad + oft), custlen * 8);
+
+	if (custom != NULL)
+	{
+		for (i = 0; i < custlen; ++i)
+		{
+			if (oft == rate)
+			{
+				keccak_fast_absorb(ctx->state, pad, rate);
+				keccak_permute(ctx, rounds);
+				oft = 0;
+			}
+
+			pad[oft] = custom[i];
+			++oft;
+		}
+	}
+
+	utils_memory_clear((pad + oft), rate - oft);
+	keccak_fast_absorb(ctx->state, pad, rate);
+	keccak_permute(ctx, rounds);
 
 
-#define SHA2_256_ROUNDS_COUNT 64
-#define SHA2_384_ROUNDS_COUNT 80
-#define SHA2_512_ROUNDS_COUNT 80
+	/* stage 2: key */
+
+	utils_memory_clear(pad, rate);
+
+	oft = keccak_left_encode(pad, rate);
+	oft += keccak_left_encode((pad + oft), keylen * 8);
+
+	if (key != NULL)
+	{
+		for (i = 0; i < keylen; ++i)
+		{
+			if (oft == rate)
+			{
+				keccak_fast_absorb(ctx->state, pad, rate);
+				keccak_permute(ctx, rounds);
+				oft = 0;
+			}
+
+			pad[oft] = key[i];
+			++oft;
+		}
+	}
+
+	utils_memory_clear((pad + oft), rate - oft);
+	keccak_fast_absorb(ctx->state, pad, rate);
+	keccak_permute(ctx, rounds);
+}
+
+void keccak_dispose(keccak_state* ctx)
+{
+	assert(ctx != NULL);
+
+	if (ctx != NULL)
+	{
+		utils_memory_clear((uint8_t*)ctx->state, sizeof(ctx->state));
+		utils_memory_clear(ctx->buffer, sizeof(ctx->buffer));
+		ctx->position = 0;
+	}
+}
+
+void keccak_finalize(keccak_state* ctx, keccak_rate rate, uint8_t* output, size_t outlen, uint8_t domain, size_t rounds)
+{
+	assert(ctx != NULL);
+	assert(output != NULL);
+
+	uint8_t buf[sizeof(size_t) + 1] = { 0 };
+	uint8_t pad[KECCAK_STATE_BYTE_SIZE] = { 0 };
+	size_t bitlen;
+
+	utils_memory_copy(pad, ctx->buffer, ctx->position);
+	bitlen = keccak_right_encode(buf, outlen * 8);
+
+	if (ctx->position + bitlen >= (size_t)rate)
+	{
+		keccak_fast_absorb(ctx->state, pad, ctx->position);
+		keccak_permute(ctx, rounds);
+		ctx->position = 0;
+	}
+
+	utils_memory_copy((pad + ctx->position), buf, bitlen);
+
+	pad[ctx->position + bitlen] = domain;
+	pad[rate - 1] |= 128U;
+	keccak_fast_absorb(ctx->state, pad, rate);
+
+	while (outlen >= (size_t)rate)
+	{
+		keccak_squeezeblocks(ctx, pad, 1, rate, rounds);
+		utils_memory_copy(output, pad, rate);
+		output += rate;
+		outlen -= rate;
+	}
+
+	if (outlen > 0)
+	{
+		keccak_squeezeblocks(ctx, pad, 1, rate, rounds);
+		utils_memory_copy(output, pad, outlen);
+	}
+
+	utils_memory_clear(ctx->buffer, sizeof(ctx->buffer));
+	ctx->position = 0;
+}
+
+void keccak_incremental_absorb(keccak_state* ctx, uint32_t rate, const uint8_t* message, size_t msglen)
+{
+	assert(ctx != NULL);
+	assert(message != NULL);
+
+	uint8_t t[8] = { 0 };
+	size_t i;
+
+	if ((ctx->position & 7) > 0)
+	{
+		i = ctx->position & 7;
+
+		while (i < 8 && msglen > 0)
+		{
+			t[i] = *message;
+			message++;
+			i++;
+			msglen--;
+			ctx->position++;
+		}
+
+		ctx->state[(ctx->position - i) / 8] ^= utils_integer_le8to64(t);
+	}
+
+	if (ctx->position && msglen >= rate - ctx->position)
+	{
+		for (i = 0; i < (rate - ctx->position) / 8; ++i)
+		{
+			ctx->state[(ctx->position / 8) + i] ^= utils_integer_le8to64(message + (8 * i));
+		}
+
+		message += rate - ctx->position;
+		msglen -= rate - ctx->position;
+		ctx->position = 0;
+		keccak_permute_p1600c(ctx->state, KECCAK_PERMUTATION_ROUNDS);
+	}
+
+	while (msglen >= rate)
+	{
+		for (i = 0; i < rate / 8; i++)
+		{
+			ctx->state[i] ^= utils_integer_le8to64(message + (8 * i));
+		}
+
+		message += rate;
+		msglen -= rate;
+		keccak_permute_p1600c(ctx->state, KECCAK_PERMUTATION_ROUNDS);
+	}
+
+	for (i = 0; i < msglen / 8; ++i)
+	{
+		ctx->state[(ctx->position / 8) + i] ^= utils_integer_le8to64(message + (8 * i));
+	}
+
+	message += 8 * i;
+	msglen -= 8 * i;
+	ctx->position += 8 * i;
+
+	if (msglen > 0)
+	{
+		for (i = 0; i < 8; ++i)
+		{
+			t[i] = 0;
+		}
+
+		for (i = 0; i < msglen; ++i)
+		{
+			t[i] = message[i];
+		}
+
+		ctx->state[ctx->position / 8] ^= utils_integer_le8to64(t);
+		ctx->position += msglen;
+	}
+}
+
+void keccak_incremental_finalize(keccak_state* ctx, uint32_t rate, uint8_t domain)
+{
+	assert(ctx != NULL);
+	
+	size_t i;
+	size_t j;
+
+	i = ctx->position >> 3;
+	j = ctx->position & 7;
+	ctx->state[i] ^= ((uint64_t)domain << (8 * j));
+	ctx->state[(rate / 8) - 1] ^= 1ULL << 63;
+	ctx->position = 0;
+}
+
+void keccak_incremental_squeeze(keccak_state* ctx, size_t rate, uint8_t* output, size_t outlen)
+{
+	assert(ctx != NULL);
+	assert(output != NULL);
+
+	size_t i;
+	uint8_t t[8];
+
+	if ((ctx->position & 7) > 0)
+	{
+		utils_integer_le64to8(t, ctx->state[ctx->position / 8]);
+		i = ctx->position & 7;
+
+		while (i < 8 && outlen > 0)
+		{
+			*output = t[i];
+			output++;
+			i++;
+			outlen--;
+			ctx->position++;
+		}
+	}
+
+	if (ctx->position && outlen >= rate - ctx->position)
+	{
+		for (i = 0; i < (rate - ctx->position) / 8; ++i)
+		{
+			utils_integer_le64to8(output + (8 * i), ctx->state[(ctx->position / 8) + i]);
+		}
+
+		output += rate - ctx->position;
+		outlen -= rate - ctx->position;
+		ctx->position = 0;
+	}
+
+	while (outlen >= rate)
+	{
+		keccak_permute_p1600c(ctx->state, KECCAK_PERMUTATION_ROUNDS);
+
+		for (i = 0; i < rate / 8; ++i)
+		{
+			utils_integer_le64to8(output + (8 * i), ctx->state[i]);
+		}
+
+		output += rate;
+		outlen -= rate;
+	}
+
+	if (outlen > 0)
+	{
+		if (ctx->position == 0)
+		{
+			keccak_permute_p1600c(ctx->state, KECCAK_PERMUTATION_ROUNDS);
+		}
+
+		for (i = 0; i < outlen / 8; ++i)
+		{
+			utils_integer_le64to8(output + (8 * i), ctx->state[(ctx->position / 8) + i]);
+		}
+
+		output += 8 * i;
+		outlen -= 8 * i;
+		ctx->position += 8 * i;
+
+		utils_integer_le64to8(t, ctx->state[ctx->position / 8]);
+
+		for (i = 0; i < outlen; ++i)
+		{
+			output[i] = t[i];
+		}
+
+		ctx->position += outlen;
+	}
+}
+
+void keccak_permute(keccak_state* ctx, size_t rounds)
+{
+	assert(ctx != NULL);
+
+	if (ctx != NULL)
+	{
+		keccak_permute_p1600c(ctx->state, rounds);
+	}
+}
+
+void keccak_permute_p1600c(uint64_t* state, size_t rounds)
+{
+	assert(state != NULL);
+	assert(rounds % 2 == 0);
+
+	uint64_t Aba;
+	uint64_t Abe;
+	uint64_t Abi;
+	uint64_t Abo;
+	uint64_t Abu;
+	uint64_t Aga;
+	uint64_t Age;
+	uint64_t Agi;
+	uint64_t Ago;
+	uint64_t Agu;
+	uint64_t Aka;
+	uint64_t Ake;
+	uint64_t Aki;
+	uint64_t Ako;
+	uint64_t Aku;
+	uint64_t Ama;
+	uint64_t Ame;
+	uint64_t Ami;
+	uint64_t Amo;
+	uint64_t Amu;
+	uint64_t Asa;
+	uint64_t Ase;
+	uint64_t Asi;
+	uint64_t Aso;
+	uint64_t Asu;
+	uint64_t BCa;
+	uint64_t BCe;
+	uint64_t BCi;
+	uint64_t BCo;
+	uint64_t BCu;
+	uint64_t Da;
+	uint64_t De;
+	uint64_t Di;
+	uint64_t Do;
+	uint64_t Du;
+	uint64_t Eba;
+	uint64_t Ebe;
+	uint64_t Ebi;
+	uint64_t Ebo;
+	uint64_t Ebu;
+	uint64_t Ega;
+	uint64_t Ege;
+	uint64_t Egi;
+	uint64_t Ego;
+	uint64_t Egu;
+	uint64_t Eka;
+	uint64_t Eke;
+	uint64_t Eki;
+	uint64_t Eko;
+	uint64_t Eku;
+	uint64_t Ema;
+	uint64_t Eme;
+	uint64_t Emi;
+	uint64_t Emo;
+	uint64_t Emu;
+	uint64_t Esa;
+	uint64_t Ese;
+	uint64_t Esi;
+	uint64_t Eso;
+	uint64_t Esu;
+
+	/* copyFromState(A, state) */
+	Aba = state[0];
+	Abe = state[1];
+	Abi = state[2];
+	Abo = state[3];
+	Abu = state[4];
+	Aga = state[5];
+	Age = state[6];
+	Agi = state[7];
+	Ago = state[8];
+	Agu = state[9];
+	Aka = state[10];
+	Ake = state[11];
+	Aki = state[12];
+	Ako = state[13];
+	Aku = state[14];
+	Ama = state[15];
+	Ame = state[16];
+	Ami = state[17];
+	Amo = state[18];
+	Amu = state[19];
+	Asa = state[20];
+	Ase = state[21];
+	Asi = state[22];
+	Aso = state[23];
+	Asu = state[24];
+
+	for (size_t i = 0; i < rounds; i += 2)
+	{
+		/* prepareTheta */
+		BCa = Aba ^ Aga ^ Aka ^ Ama ^ Asa;
+		BCe = Abe ^ Age ^ Ake ^ Ame ^ Ase;
+		BCi = Abi ^ Agi ^ Aki ^ Ami ^ Asi;
+		BCo = Abo ^ Ago ^ Ako ^ Amo ^ Aso;
+		BCu = Abu ^ Agu ^ Aku ^ Amu ^ Asu;
+
+		/* thetaRhoPiChiIotaPrepareTheta */
+		Da = BCu ^ utils_integer_rotl64(BCe, 1);
+		De = BCa ^ utils_integer_rotl64(BCi, 1);
+		Di = BCe ^ utils_integer_rotl64(BCo, 1);
+		Do = BCi ^ utils_integer_rotl64(BCu, 1);
+		Du = BCo ^ utils_integer_rotl64(BCa, 1);
+
+		Aba ^= Da;
+		BCa = Aba;
+		Age ^= De;
+		BCe = utils_integer_rotl64(Age, 44);
+		Aki ^= Di;
+		BCi = utils_integer_rotl64(Aki, 43);
+		Amo ^= Do;
+		BCo = utils_integer_rotl64(Amo, 21);
+		Asu ^= Du;
+		BCu = utils_integer_rotl64(Asu, 14);
+		Eba = BCa ^ ((~BCe) & BCi);
+		Eba ^= KECCAK_ROUND_CONSTANTS[i];
+		Ebe = BCe ^ ((~BCi) & BCo);
+		Ebi = BCi ^ ((~BCo) & BCu);
+		Ebo = BCo ^ ((~BCu) & BCa);
+		Ebu = BCu ^ ((~BCa) & BCe);
+
+		Abo ^= Do;
+		BCa = utils_integer_rotl64(Abo, 28);
+		Agu ^= Du;
+		BCe = utils_integer_rotl64(Agu, 20);
+		Aka ^= Da;
+		BCi = utils_integer_rotl64(Aka, 3);
+		Ame ^= De;
+		BCo = utils_integer_rotl64(Ame, 45);
+		Asi ^= Di;
+		BCu = utils_integer_rotl64(Asi, 61);
+		Ega = BCa ^ ((~BCe) & BCi);
+		Ege = BCe ^ ((~BCi) & BCo);
+		Egi = BCi ^ ((~BCo) & BCu);
+		Ego = BCo ^ ((~BCu) & BCa);
+		Egu = BCu ^ ((~BCa) & BCe);
+
+		Abe ^= De;
+		BCa = utils_integer_rotl64(Abe, 1);
+		Agi ^= Di;
+		BCe = utils_integer_rotl64(Agi, 6);
+		Ako ^= Do;
+		BCi = utils_integer_rotl64(Ako, 25);
+		Amu ^= Du;
+		BCo = utils_integer_rotl64(Amu, 8);
+		Asa ^= Da;
+		BCu = utils_integer_rotl64(Asa, 18);
+		Eka = BCa ^ ((~BCe) & BCi);
+		Eke = BCe ^ ((~BCi) & BCo);
+		Eki = BCi ^ ((~BCo) & BCu);
+		Eko = BCo ^ ((~BCu) & BCa);
+		Eku = BCu ^ ((~BCa) & BCe);
+
+		Abu ^= Du;
+		BCa = utils_integer_rotl64(Abu, 27);
+		Aga ^= Da;
+		BCe = utils_integer_rotl64(Aga, 36);
+		Ake ^= De;
+		BCi = utils_integer_rotl64(Ake, 10);
+		Ami ^= Di;
+		BCo = utils_integer_rotl64(Ami, 15);
+		Aso ^= Do;
+		BCu = utils_integer_rotl64(Aso, 56);
+		Ema = BCa ^ ((~BCe) & BCi);
+		Eme = BCe ^ ((~BCi) & BCo);
+		Emi = BCi ^ ((~BCo) & BCu);
+		Emo = BCo ^ ((~BCu) & BCa);
+		Emu = BCu ^ ((~BCa) & BCe);
+
+		Abi ^= Di;
+		BCa = utils_integer_rotl64(Abi, 62);
+		Ago ^= Do;
+		BCe = utils_integer_rotl64(Ago, 55);
+		Aku ^= Du;
+		BCi = utils_integer_rotl64(Aku, 39);
+		Ama ^= Da;
+		BCo = utils_integer_rotl64(Ama, 41);
+		Ase ^= De;
+		BCu = utils_integer_rotl64(Ase, 2);
+		Esa = BCa ^ ((~BCe) & BCi);
+		Ese = BCe ^ ((~BCi) & BCo);
+		Esi = BCi ^ ((~BCo) & BCu);
+		Eso = BCo ^ ((~BCu) & BCa);
+		Esu = BCu ^ ((~BCa) & BCe);
+
+		/* prepareTheta */
+		BCa = Eba ^ Ega ^ Eka ^ Ema ^ Esa;
+		BCe = Ebe ^ Ege ^ Eke ^ Eme ^ Ese;
+		BCi = Ebi ^ Egi ^ Eki ^ Emi ^ Esi;
+		BCo = Ebo ^ Ego ^ Eko ^ Emo ^ Eso;
+		BCu = Ebu ^ Egu ^ Eku ^ Emu ^ Esu;
+
+		/* thetaRhoPiChiIotaPrepareTheta */
+		Da = BCu ^ utils_integer_rotl64(BCe, 1);
+		De = BCa ^ utils_integer_rotl64(BCi, 1);
+		Di = BCe ^ utils_integer_rotl64(BCo, 1);
+		Do = BCi ^ utils_integer_rotl64(BCu, 1);
+		Du = BCo ^ utils_integer_rotl64(BCa, 1);
+
+		Eba ^= Da;
+		BCa = Eba;
+		Ege ^= De;
+		BCe = utils_integer_rotl64(Ege, 44);
+		Eki ^= Di;
+		BCi = utils_integer_rotl64(Eki, 43);
+		Emo ^= Do;
+		BCo = utils_integer_rotl64(Emo, 21);
+		Esu ^= Du;
+		BCu = utils_integer_rotl64(Esu, 14);
+		Aba = BCa ^ ((~BCe) & BCi);
+		Aba ^= KECCAK_ROUND_CONSTANTS[i + 1];
+		Abe = BCe ^ ((~BCi) & BCo);
+		Abi = BCi ^ ((~BCo) & BCu);
+		Abo = BCo ^ ((~BCu) & BCa);
+		Abu = BCu ^ ((~BCa) & BCe);
+
+		Ebo ^= Do;
+		BCa = utils_integer_rotl64(Ebo, 28);
+		Egu ^= Du;
+		BCe = utils_integer_rotl64(Egu, 20);
+		Eka ^= Da;
+		BCi = utils_integer_rotl64(Eka, 3);
+		Eme ^= De;
+		BCo = utils_integer_rotl64(Eme, 45);
+		Esi ^= Di;
+		BCu = utils_integer_rotl64(Esi, 61);
+		Aga = BCa ^ ((~BCe) & BCi);
+		Age = BCe ^ ((~BCi) & BCo);
+		Agi = BCi ^ ((~BCo) & BCu);
+		Ago = BCo ^ ((~BCu) & BCa);
+		Agu = BCu ^ ((~BCa) & BCe);
+
+		Ebe ^= De;
+		BCa = utils_integer_rotl64(Ebe, 1);
+		Egi ^= Di;
+		BCe = utils_integer_rotl64(Egi, 6);
+		Eko ^= Do;
+		BCi = utils_integer_rotl64(Eko, 25);
+		Emu ^= Du;
+		BCo = utils_integer_rotl64(Emu, 8);
+		Esa ^= Da;
+		BCu = utils_integer_rotl64(Esa, 18);
+		Aka = BCa ^ ((~BCe) & BCi);
+		Ake = BCe ^ ((~BCi) & BCo);
+		Aki = BCi ^ ((~BCo) & BCu);
+		Ako = BCo ^ ((~BCu) & BCa);
+		Aku = BCu ^ ((~BCa) & BCe);
+
+		Ebu ^= Du;
+		BCa = utils_integer_rotl64(Ebu, 27);
+		Ega ^= Da;
+		BCe = utils_integer_rotl64(Ega, 36);
+		Eke ^= De;
+		BCi = utils_integer_rotl64(Eke, 10);
+		Emi ^= Di;
+		BCo = utils_integer_rotl64(Emi, 15);
+		Eso ^= Do;
+		BCu = utils_integer_rotl64(Eso, 56);
+		Ama = BCa ^ ((~BCe) & BCi);
+		Ame = BCe ^ ((~BCi) & BCo);
+		Ami = BCi ^ ((~BCo) & BCu);
+		Amo = BCo ^ ((~BCu) & BCa);
+		Amu = BCu ^ ((~BCa) & BCe);
+
+		Ebi ^= Di;
+		BCa = utils_integer_rotl64(Ebi, 62);
+		Ego ^= Do;
+		BCe = utils_integer_rotl64(Ego, 55);
+		Eku ^= Du;
+		BCi = utils_integer_rotl64(Eku, 39);
+		Ema ^= Da;
+		BCo = utils_integer_rotl64(Ema, 41);
+		Ese ^= De;
+		BCu = utils_integer_rotl64(Ese, 2);
+		Asa = BCa ^ ((~BCe) & BCi);
+		Ase = BCe ^ ((~BCi) & BCo);
+		Asi = BCi ^ ((~BCo) & BCu);
+		Aso = BCo ^ ((~BCu) & BCa);
+		Asu = BCu ^ ((~BCa) & BCe);
+	}
+
+	/* copy to state */
+	state[0] = Aba;
+	state[1] = Abe;
+	state[2] = Abi;
+	state[3] = Abo;
+	state[4] = Abu;
+	state[5] = Aga;
+	state[6] = Age;
+	state[7] = Agi;
+	state[8] = Ago;
+	state[9] = Agu;
+	state[10] = Aka;
+	state[11] = Ake;
+	state[12] = Aki;
+	state[13] = Ako;
+	state[14] = Aku;
+	state[15] = Ama;
+	state[16] = Ame;
+	state[17] = Ami;
+	state[18] = Amo;
+	state[19] = Amu;
+	state[20] = Asa;
+	state[21] = Ase;
+	state[22] = Asi;
+	state[23] = Aso;
+	state[24] = Asu;
+}
+
+void keccak_squeezeblocks(keccak_state* ctx, uint8_t* output, size_t nblocks, keccak_rate rate, size_t rounds)
+{
+	assert(ctx != NULL);
+	assert(output != NULL);
+
+	if (ctx != NULL && output != NULL)
+	{
+		while (nblocks > 0)
+		{
+			keccak_permute(ctx, rounds);
+
+#if defined(SYSTEM_IS_LITTLE_ENDIAN)
+			utils_memory_copy(output, (uint8_t*)ctx->state, rate);
+#else
+			for (size_t i = 0; i < (rate >> 3); ++i)
+			{
+				utils_integer_le64to8((output + sizeof(uint64_t) * i), ctx->state[i]);
+			}
+#endif
+			output += rate;
+			nblocks--;
+		}
+	}
+}
+
+void keccak_initialize_state(keccak_state* ctx)
+{
+	assert(ctx != NULL);
+
+	if (ctx != NULL)
+	{
+		utils_memory_clear((uint8_t*)ctx->state, sizeof(ctx->state));
+		utils_memory_clear(ctx->buffer, sizeof(ctx->buffer));
+		ctx->position = 0;
+	}
+}
+
+void keccak_update(keccak_state* ctx, keccak_rate rate, const uint8_t* message, size_t msglen, size_t rounds)
+{
+	assert(ctx != NULL);
+	assert(message != NULL);
+
+	if (ctx != NULL && message != NULL && msglen != 0)
+	{
+		if (ctx->position != 0 && (ctx->position + msglen >= (size_t)rate))
+		{
+			const size_t RMDLEN = rate - ctx->position;
+
+			if (RMDLEN != 0)
+			{
+				utils_memory_copy((ctx->buffer + ctx->position), message, RMDLEN);
+			}
+
+			keccak_fast_absorb(ctx->state, ctx->buffer, (size_t)rate);
+			keccak_permute(ctx, rounds);
+			ctx->position = 0;
+			message += RMDLEN;
+			msglen -= RMDLEN;
+		}
+
+		/* sequential loop through blocks */
+		while (msglen >= (size_t)rate)
+		{
+			keccak_fast_absorb(ctx->state, message, rate);
+			keccak_permute(ctx, rounds);
+			message += rate;
+			msglen -= rate;
+		}
+
+		/* store unaligned bytes */
+		if (msglen != 0)
+		{
+			utils_memory_copy((ctx->buffer + ctx->position), message, msglen);
+			ctx->position += msglen;
+		}
+	}
+}
+
+/* cSHAKE */
+
+void cshake256_compute(uint8_t* output, size_t outlen, const uint8_t* key, size_t keylen, const uint8_t* name, size_t namelen, const uint8_t* custom, size_t custlen)
+{
+	assert(output != NULL);
+	assert(key != NULL);
+
+	const size_t nblocks = outlen / KECCAK_256_RATE;
+	keccak_state ctx;
+	uint8_t hash[KECCAK_256_RATE] = { 0 };
+
+	if (custlen + namelen != 0)
+	{
+		cshake_initialize(&ctx, keccak_rate_256, key, keylen, name, namelen, custom, custlen);
+	}
+	else
+	{
+		shake_initialize(&ctx, keccak_rate_256, key, keylen);
+	}
+
+	cshake_squeezeblocks(&ctx, keccak_rate_256, output, nblocks);
+
+	output += (nblocks * KECCAK_256_RATE);
+	outlen -= (nblocks * KECCAK_256_RATE);
+
+	if (outlen != 0)
+	{
+		cshake_squeezeblocks(&ctx, keccak_rate_256, hash, 1);
+		utils_memory_copy(output, hash, outlen);
+	}
+
+	keccak_dispose(&ctx);
+}
+
+void cshake512_compute(uint8_t* output, size_t outlen, const uint8_t* key, size_t keylen, const uint8_t* name, size_t namelen, const uint8_t* custom, size_t custlen)
+{
+	assert(output != NULL);
+	assert(key != NULL);
+
+	const size_t nblocks = outlen / KECCAK_512_RATE;
+	keccak_state ctx;
+	uint8_t hash[KECCAK_512_RATE] = { 0 };
+
+	if (custlen + namelen != 0)
+	{
+		cshake_initialize(&ctx, keccak_rate_512, key, keylen, name, namelen, custom, custlen);
+	}
+	else
+	{
+		shake_initialize(&ctx, keccak_rate_512, key, keylen);
+	}
+
+	cshake_squeezeblocks(&ctx, keccak_rate_512, output, nblocks);
+	output += (nblocks * KECCAK_512_RATE);
+	outlen -= (nblocks * KECCAK_512_RATE);
+
+	if (outlen != 0)
+	{
+		cshake_squeezeblocks(&ctx, keccak_rate_512, hash, 1);
+		utils_memory_copy(output, hash, outlen);
+	}
+
+	keccak_dispose(&ctx);
+}
+
+void shake_initialize(keccak_state* ctx, keccak_rate rate, const uint8_t* key, size_t keylen)
+{
+	assert(ctx != NULL);
+	assert(key != NULL);
+
+	keccak_initialize_state(ctx);
+	keccak_absorb(ctx, rate, key, keylen, KECCAK_SHAKE_DOMAIN_ID, KECCAK_PERMUTATION_ROUNDS);
+}
+
+void cshake_initialize(keccak_state* ctx, keccak_rate rate, const uint8_t* key, size_t keylen, const uint8_t* name, size_t namelen, const uint8_t* custom, size_t custlen)
+{
+	assert(ctx != NULL);
+	assert(key != NULL);
+
+	keccak_initialize_state(ctx);
+	/* absorb the custom and name arrays */
+	keccak_absorb_custom(ctx, rate, custom, custlen, name, namelen, KECCAK_PERMUTATION_ROUNDS);
+	/* finalize the key */
+	keccak_absorb(ctx, rate, key, keylen, KECCAK_CSHAKE_DOMAIN_ID, KECCAK_PERMUTATION_ROUNDS);
+}
+
+void cshake_squeezeblocks(keccak_state* ctx, keccak_rate rate, uint8_t* output, size_t nblocks)
+{
+	keccak_squeezeblocks(ctx, output, nblocks, rate, KECCAK_PERMUTATION_ROUNDS);
+}
+
+void cshake_update(keccak_state* ctx, keccak_rate rate, const uint8_t* key, size_t keylen)
+{
+	assert(ctx != NULL);
+	assert(key != NULL);
+
+	while (keylen >= (size_t)rate)
+	{
+		keccak_fast_absorb(ctx->state, key, keylen);
+		keccak_permute(ctx, KECCAK_PERMUTATION_ROUNDS);
+		keylen -= rate;
+		key += rate;
+	}
+
+	if (keylen != 0)
+	{
+		keccak_fast_absorb(ctx->state, key, keylen);
+		keccak_permute(ctx, KECCAK_PERMUTATION_ROUNDS);
+	}
+}
+
+/* KMAC */
+
+void kmac256_compute(uint8_t* output, size_t outlen, const uint8_t* message, size_t msglen, const uint8_t* key, size_t keylen, const uint8_t* custom, size_t custlen)
+{
+	assert(output != NULL);
+	assert(message != NULL);
+	assert(key != NULL);
+
+	keccak_state ctx;
+
+	kmac_initialize(&ctx, keccak_rate_256, key, keylen, custom, custlen);
+	kmac_update(&ctx, keccak_rate_256, message, msglen);
+	kmac_finalize(&ctx, keccak_rate_256, output, outlen);
+}
+
+void kmac512_compute(uint8_t* output, size_t outlen, const uint8_t* message, size_t msglen, const uint8_t* key, size_t keylen, const uint8_t* custom, size_t custlen)
+{
+	assert(output != NULL);
+	assert(message != NULL);
+	assert(key != NULL);
+
+	keccak_state ctx;
+
+	kmac_initialize(&ctx, keccak_rate_512, key, keylen, custom, custlen);
+	kmac_update(&ctx, keccak_rate_512, message, msglen);
+	kmac_finalize(&ctx, keccak_rate_512, output, outlen);
+}
+
+void kmac_finalize(keccak_state* ctx, keccak_rate rate, uint8_t* output, size_t outlen)
+{
+	keccak_finalize(ctx, rate, output, outlen, KECCAK_KMAC_DOMAIN_ID, KECCAK_PERMUTATION_ROUNDS);
+}
+
+void kmac_initialize(keccak_state* ctx, keccak_rate rate, const uint8_t* key, size_t keylen, const uint8_t* custom, size_t custlen)
+{
+	assert(ctx != NULL);
+	assert(key != NULL);
+
+	const uint8_t name[4] = { 0x4B, 0x4D, 0x41, 0x43 };
+
+	keccak_absorb_key_custom(ctx, rate, key, keylen, custom, custlen, name, sizeof(name), KECCAK_PERMUTATION_ROUNDS);
+}
+
+void kmac_update(keccak_state* ctx, keccak_rate rate, const uint8_t* message, size_t msglen)
+{
+	assert(ctx != NULL);
+	assert(message != NULL);
+
+	keccak_update(ctx, rate, message, msglen, KECCAK_PERMUTATION_ROUNDS);
+}
+
+/* SHA2 */
 
 /* SHA2-256 */
 
@@ -22,52 +1044,53 @@ static const uint32_t sha256_iv[8] =
 	0x5BE0CD19UL
 };
 
-static void sha256_increase(qsc_sha256_state* ctx, size_t msglen)
+static void sha256_increase(sha256_state* ctx, size_t msglen)
 {
 	ctx->t += msglen;
 }
 
-QSC_SYSTEM_OPTIMIZE_IGNORE
-void qsc_sha256_dispose(qsc_sha256_state* ctx)
+SYSTEM_OPTIMIZE_IGNORE
+void sha256_dispose(sha256_state* ctx)
 {
 	assert(ctx != NULL);
 
 	if (ctx != NULL)
 	{
-		qsc_memutils_clear((uint8_t*)ctx->state, sizeof(ctx->state));
-		qsc_memutils_clear(ctx->buffer, sizeof(ctx->buffer));
+		utils_memory_clear((uint8_t*)ctx->state, sizeof(ctx->state));
+		utils_memory_clear(ctx->buffer, sizeof(ctx->buffer));
 		ctx->t = 0;
 		ctx->position = 0;
 	}
 }
+SYSTEM_OPTIMIZE_RESUME
 
-void qsc_sha256_compute(uint8_t* output, const uint8_t* message, size_t msglen)
+void sha256_compute(uint8_t* output, const uint8_t* message, size_t msglen)
 {
 	assert(output != NULL);
 	assert(message != NULL);
 
-	qsc_sha256_state ctx;
+	sha256_state ctx;
 
-	qsc_sha256_initialize(&ctx);
-	qsc_sha256_update(&ctx, message, msglen);
-	qsc_sha256_finalize(&ctx, output);
+	sha256_initialize(&ctx);
+	sha256_update(&ctx, message, msglen);
+	sha256_finalize(&ctx, output);
 }
 
-void qsc_sha256_finalize(qsc_sha256_state* ctx, uint8_t* output)
+void sha256_finalize(sha256_state* ctx, uint8_t* output)
 {
 	assert(ctx != NULL);
 	assert(output != NULL);
 
-	uint8_t pad[QSC_SHA2_256_RATE] = { 0 };
+	uint8_t pad[SHA2_256_RATE] = { 0 };
 	uint64_t bitLen;
 
-	qsc_memutils_copy(pad, ctx->buffer, ctx->position);
+	utils_memory_copy(pad, ctx->buffer, ctx->position);
 	sha256_increase(ctx, ctx->position);
 	bitLen = (ctx->t << 3);
 
-	if (ctx->position == QSC_SHA2_256_RATE)
+	if (ctx->position == SHA2_256_RATE)
 	{
-		qsc_sha256_permute(ctx->state, pad);
+		sha256_permute(ctx->state, pad);
 		ctx->position = 0;
 	}
 
@@ -75,224 +1098,45 @@ void qsc_sha256_finalize(qsc_sha256_state* ctx, uint8_t* output)
 	++ctx->position;
 
 	/* padding */
-	if (ctx->position < QSC_SHA2_256_RATE)
+	if (ctx->position < SHA2_256_RATE)
 	{
-		qsc_memutils_clear((pad + ctx->position), QSC_SHA2_256_RATE - ctx->position);
+		utils_memory_clear((pad + ctx->position), SHA2_256_RATE - ctx->position);
 	}
 
 	if (ctx->position > 56)
 	{
-		qsc_sha256_permute(ctx->state, pad);
-		qsc_memutils_clear(pad, QSC_SHA2_256_RATE);
+		sha256_permute(ctx->state, pad);
+		utils_memory_clear(pad, SHA2_256_RATE);
 	}
 
 	/* finalize state with counter and last compression */
-	qsc_intutils_be32to8((pad + 56), (uint32_t)(bitLen >> 32));
-	qsc_intutils_be32to8((pad + 60), (uint32_t)bitLen);
-	qsc_sha256_permute(ctx->state, pad);
+	utils_integer_be32to8((pad + 56), (uint32_t)(bitLen >> 32));
+	utils_integer_be32to8((pad + 60), (uint32_t)bitLen);
+	sha256_permute(ctx->state, pad);
 
-#if defined(QSC_SYSTEM_IS_BIG_ENDIAN)
-	qsc_memutils_copy(output, (uint8_t*)ctx->state, QSC_SHA2_256_HASH_SIZE);
+#if defined(SYSTEM_IS_BIG_ENDIAN)
+	utils_memory_copy(output, (uint8_t*)ctx->state, SHA2_256_HASH_SIZE);
 #else
-	for (size_t i = 0; i < QSC_SHA2_256_HASH_SIZE; i += sizeof(uint32_t))
+	for (size_t i = 0; i < SHA2_256_HASH_SIZE; i += sizeof(uint32_t))
 	{
-		qsc_intutils_be32to8((output + i), ctx->state[i / sizeof(uint32_t)]);
+		utils_integer_be32to8((output + i), ctx->state[i / sizeof(uint32_t)]);
 	}
 #endif
 
-	qsc_sha256_dispose(ctx);
+	sha256_dispose(ctx);
 }
 
-void qsc_sha256_initialize(qsc_sha256_state* ctx)
+void sha256_initialize(sha256_state* ctx)
 {
 	assert(ctx != NULL);
 
-	qsc_memutils_copy((uint8_t*)ctx->state, (const uint8_t*)sha256_iv, sizeof(ctx->state));
-	qsc_memutils_clear(ctx->buffer, sizeof(ctx->buffer));
+	utils_memory_copy((uint8_t*)ctx->state, (const uint8_t*)sha256_iv, sizeof(ctx->state));
+	utils_memory_clear(ctx->buffer, sizeof(ctx->buffer));
 	ctx->t = 0;
 	ctx->position = 0;
 }
 
-#if defined(QSC_SHA2_SHANI_ENABLED)
-void qsc_sha256_permute(uint32_t* output, const uint8_t* message)
-{
-	assert(output != NULL);
-	assert(message != NULL);
-
-	__m128i s0;
-	__m128i s1;
-	__m128i t0;
-	__m128i t1;
-	__m128i pmsg;
-	__m128i m0;
-	__m128i m1;
-	__m128i m2;
-	__m128i m3;
-	__m128i mask;
-	__m128i ptmp;
-
-	/* load initial values */
-	ptmp = _mm_loadu_si128((const __m128i*)output);
-	s1 = _mm_loadu_si128((const __m128i*)(uint32_t*)(output + (4 * sizeof(uint32_t))));
-	mask = _mm_set_epi64x(0x0C0D0E0F08090A0BULL, 0x0405060700010203ULL);
-	ptmp = _mm_shuffle_epi32(ptmp, 0xB1);
-	s1 = _mm_shuffle_epi32(s1, 0x1B);
-	s0 = _mm_alignr_epi8(ptmp, s1, 8);
-	s1 = _mm_blend_epi16(s1, ptmp, 0xF0);
-	t0 = s0;
-	t1 = s1;
-
-	/* rounds 0-3 */
-	pmsg = _mm_loadu_si128((const __m128i*)message);
-	m0 = _mm_shuffle_epi8(pmsg, mask);
-	pmsg = _mm_add_epi32(m0, _mm_set_epi64x(0xE9B5DBA5B5C0FBCFULL, 0x71374491428A2F98ULL));
-	s1 = _mm_sha256rnds2_epu32(s1, s0, pmsg);
-	pmsg = _mm_shuffle_epi32(pmsg, 0x0E);
-	s0 = _mm_sha256rnds2_epu32(s0, s1, pmsg);
-	/* rounds 4-7 */
-	m1 = _mm_loadu_si128((const __m128i*)(uint8_t*)(message + 16));
-	m1 = _mm_shuffle_epi8(m1, mask);
-	pmsg = _mm_add_epi32(m1, _mm_set_epi64x(0xAB1C5ED5923F82A4ULL, 0x59F111F13956C25BULL));
-	s1 = _mm_sha256rnds2_epu32(s1, s0, pmsg);
-	pmsg = _mm_shuffle_epi32(pmsg, 0x0E);
-	s0 = _mm_sha256rnds2_epu32(s0, s1, pmsg);
-	m0 = _mm_sha256msg1_epu32(m0, m1);
-	/* rounds 8-11 */
-	m2 = _mm_loadu_si128((const __m128i*)(uint8_t*)(message + 32));
-	m2 = _mm_shuffle_epi8(m2, mask);
-	pmsg = _mm_add_epi32(m2, _mm_set_epi64x(0x550C7DC3243185BEULL, 0x12835B01D807AA98ULL));
-	s1 = _mm_sha256rnds2_epu32(s1, s0, pmsg);
-	pmsg = _mm_shuffle_epi32(pmsg, 0x0E);
-	s0 = _mm_sha256rnds2_epu32(s0, s1, pmsg);
-	m1 = _mm_sha256msg1_epu32(m1, m2);
-	/* rounds 12-15 */
-	m3 = _mm_loadu_si128((const __m128i*)(uint8_t*)(message + 48));
-	m3 = _mm_shuffle_epi8(m3, mask);
-	pmsg = _mm_add_epi32(m3, _mm_set_epi64x(0xC19BF1749BDC06A7ULL, 0x80DEB1FE72BE5D74ULL));
-	s1 = _mm_sha256rnds2_epu32(s1, s0, pmsg);
-	ptmp = _mm_alignr_epi8(m3, m2, 4);
-	m0 = _mm_add_epi32(m0, ptmp);
-	m0 = _mm_sha256msg2_epu32(m0, m3);
-	pmsg = _mm_shuffle_epi32(pmsg, 0x0E);
-	s0 = _mm_sha256rnds2_epu32(s0, s1, pmsg);
-	m2 = _mm_sha256msg1_epu32(m2, m3);
-	/* rounds 16-19 */
-	pmsg = _mm_add_epi32(m0, _mm_set_epi64x(0x240CA1CC0FC19DC6ULL, 0xEFBE4786E49B69C1ULL));
-	s1 = _mm_sha256rnds2_epu32(s1, s0, pmsg);
-	ptmp = _mm_alignr_epi8(m0, m3, 4);
-	m1 = _mm_add_epi32(m1, ptmp);
-	m1 = _mm_sha256msg2_epu32(m1, m0);
-	pmsg = _mm_shuffle_epi32(pmsg, 0x0E);
-	s0 = _mm_sha256rnds2_epu32(s0, s1, pmsg);
-	m3 = _mm_sha256msg1_epu32(m3, m0);
-	/* rounds 20-23 */
-	pmsg = _mm_add_epi32(m1, _mm_set_epi64x(0x76F988DA5CB0A9DCULL, 0x4A7484AA2DE92C6FULL));
-	s1 = _mm_sha256rnds2_epu32(s1, s0, pmsg);
-	ptmp = _mm_alignr_epi8(m1, m0, 4);
-	m2 = _mm_add_epi32(m2, ptmp);
-	m2 = _mm_sha256msg2_epu32(m2, m1);
-	pmsg = _mm_shuffle_epi32(pmsg, 0x0E);
-	s0 = _mm_sha256rnds2_epu32(s0, s1, pmsg);
-	m0 = _mm_sha256msg1_epu32(m0, m1);
-	/* rounds 24-27 */
-	pmsg = _mm_add_epi32(m2, _mm_set_epi64x(0xBF597FC7B00327C8ULL, 0xA831C66D983E5152ULL));
-	s1 = _mm_sha256rnds2_epu32(s1, s0, pmsg);
-	ptmp = _mm_alignr_epi8(m2, m1, 4);
-	m3 = _mm_add_epi32(m3, ptmp);
-	m3 = _mm_sha256msg2_epu32(m3, m2);
-	pmsg = _mm_shuffle_epi32(pmsg, 0x0E);
-	s0 = _mm_sha256rnds2_epu32(s0, s1, pmsg);
-	m1 = _mm_sha256msg1_epu32(m1, m2);
-	/* rounds 28-31 */
-	pmsg = _mm_add_epi32(m3, _mm_set_epi64x(0x1429296706CA6351ULL, 0xD5A79147C6E00BF3ULL));
-	s1 = _mm_sha256rnds2_epu32(s1, s0, pmsg);
-	ptmp = _mm_alignr_epi8(m3, m2, 4);
-	m0 = _mm_add_epi32(m0, ptmp);
-	m0 = _mm_sha256msg2_epu32(m0, m3);
-	pmsg = _mm_shuffle_epi32(pmsg, 0x0E);
-	s0 = _mm_sha256rnds2_epu32(s0, s1, pmsg);
-	m2 = _mm_sha256msg1_epu32(m2, m3);
-	/* rounds 32-35 */
-	pmsg = _mm_add_epi32(m0, _mm_set_epi64x(0x53380D134D2C6DFCULL, 0x2E1B213827B70A85ULL));
-	s1 = _mm_sha256rnds2_epu32(s1, s0, pmsg);
-	ptmp = _mm_alignr_epi8(m0, m3, 4);
-	m1 = _mm_add_epi32(m1, ptmp);
-	m1 = _mm_sha256msg2_epu32(m1, m0);
-	pmsg = _mm_shuffle_epi32(pmsg, 0x0E);
-	s0 = _mm_sha256rnds2_epu32(s0, s1, pmsg);
-	m3 = _mm_sha256msg1_epu32(m3, m0);
-	/* rounds 36-39 */
-	pmsg = _mm_add_epi32(m1, _mm_set_epi64x(0x92722C8581C2C92EULL, 0x766A0ABB650A7354ULL));
-	s1 = _mm_sha256rnds2_epu32(s1, s0, pmsg);
-	ptmp = _mm_alignr_epi8(m1, m0, 4);
-	m2 = _mm_add_epi32(m2, ptmp);
-	m2 = _mm_sha256msg2_epu32(m2, m1);
-	pmsg = _mm_shuffle_epi32(pmsg, 0x0E);
-	s0 = _mm_sha256rnds2_epu32(s0, s1, pmsg);
-	m0 = _mm_sha256msg1_epu32(m0, m1);
-	/* rounds 40-43 */
-	pmsg = _mm_add_epi32(m2, _mm_set_epi64x(0xC76C51A3C24B8B70ULL, 0xA81A664BA2BFE8A1ULL));
-	s1 = _mm_sha256rnds2_epu32(s1, s0, pmsg);
-	ptmp = _mm_alignr_epi8(m2, m1, 4);
-	m3 = _mm_add_epi32(m3, ptmp);
-	m3 = _mm_sha256msg2_epu32(m3, m2);
-	pmsg = _mm_shuffle_epi32(pmsg, 0x0E);
-	s0 = _mm_sha256rnds2_epu32(s0, s1, pmsg);
-	m1 = _mm_sha256msg1_epu32(m1, m2);
-	/* rounds 44-47 */
-	pmsg = _mm_add_epi32(m3, _mm_set_epi64x(0x106AA070F40E3585ULL, 0xD6990624D192E819ULL));
-	s1 = _mm_sha256rnds2_epu32(s1, s0, pmsg);
-	ptmp = _mm_alignr_epi8(m3, m2, 4);
-	m0 = _mm_add_epi32(m0, ptmp);
-	m0 = _mm_sha256msg2_epu32(m0, m3);
-	pmsg = _mm_shuffle_epi32(pmsg, 0x0E);
-	s0 = _mm_sha256rnds2_epu32(s0, s1, pmsg);
-	m2 = _mm_sha256msg1_epu32(m2, m3);
-	/* rounds 48-51 */
-	pmsg = _mm_add_epi32(m0, _mm_set_epi64x(0x34B0BCB52748774CULL, 0x1E376C0819A4C116ULL));
-	s1 = _mm_sha256rnds2_epu32(s1, s0, pmsg);
-	ptmp = _mm_alignr_epi8(m0, m3, 4);
-	m1 = _mm_add_epi32(m1, ptmp);
-	m1 = _mm_sha256msg2_epu32(m1, m0);
-	pmsg = _mm_shuffle_epi32(pmsg, 0x0E);
-	s0 = _mm_sha256rnds2_epu32(s0, s1, pmsg);
-	m3 = _mm_sha256msg1_epu32(m3, m0);
-	/* rounds 52-55 */
-	pmsg = _mm_add_epi32(m1, _mm_set_epi64x(0x682E6FF35B9CCA4FULL, 0x4ED8AA4A391C0CB3ULL));
-	s1 = _mm_sha256rnds2_epu32(s1, s0, pmsg);
-	ptmp = _mm_alignr_epi8(m1, m0, 4);
-	m2 = _mm_add_epi32(m2, ptmp);
-	m2 = _mm_sha256msg2_epu32(m2, m1);
-	pmsg = _mm_shuffle_epi32(pmsg, 0x0E);
-	s0 = _mm_sha256rnds2_epu32(s0, s1, pmsg);
-	/* rounds 56-59 */
-	pmsg = _mm_add_epi32(m2, _mm_set_epi64x(0x8CC7020884C87814ULL, 0x78A5636F748F82EEULL));
-	s1 = _mm_sha256rnds2_epu32(s1, s0, pmsg);
-	ptmp = _mm_alignr_epi8(m2, m1, 4);
-	m3 = _mm_add_epi32(m3, ptmp);
-	m3 = _mm_sha256msg2_epu32(m3, m2);
-	pmsg = _mm_shuffle_epi32(pmsg, 0x0E);
-	s0 = _mm_sha256rnds2_epu32(s0, s1, pmsg);
-	/* rounds 60-63 */
-	pmsg = _mm_add_epi32(m3, _mm_set_epi64x(0xC67178F2BEF9A3F7ULL, 0xA4506CEB90BEFFFAULL));
-	s1 = _mm_sha256rnds2_epu32(s1, s0, pmsg);
-	pmsg = _mm_shuffle_epi32(pmsg, 0x0E);
-	s0 = _mm_sha256rnds2_epu32(s0, s1, pmsg);
-
-	/* combine state */
-	s0 = _mm_add_epi32(s0, t0);
-	s1 = _mm_add_epi32(s1, t1);
-	ptmp = _mm_shuffle_epi32(s0, 0x1B);
-	s1 = _mm_shuffle_epi32(s1, 0xB1);
-	s0 = _mm_blend_epi16(ptmp, s1, 0xF0);
-	s1 = _mm_alignr_epi8(s1, ptmp, 8);
-
-	/* store */
-	_mm_storeu_si128((__m128i*)output, s0);
-	_mm_storeu_si128((__m128i*)(uint32_t*)(output + (4 * sizeof(uint32_t))), s1);
-}
-#else
-void qsc_sha256_permute(uint32_t* output, const uint8_t* message)
+void sha256_permute(uint32_t* output, const uint8_t* message)
 {
 	assert(output != NULL);
 	assert(message != NULL);
@@ -332,22 +1176,22 @@ void qsc_sha256_permute(uint32_t* output, const uint8_t* message)
 	g = output[6];
 	h = output[7];
 
-	w0 = qsc_intutils_be8to32(message);
-	w1 = qsc_intutils_be8to32(message + 4);
-	w2 = qsc_intutils_be8to32(message + 8);
-	w3 = qsc_intutils_be8to32(message + 12);
-	w4 = qsc_intutils_be8to32(message + 16);
-	w5 = qsc_intutils_be8to32(message + 20);
-	w6 = qsc_intutils_be8to32(message + 24);
-	w7 = qsc_intutils_be8to32(message + 28);
-	w8 = qsc_intutils_be8to32(message + 32);
-	w9 = qsc_intutils_be8to32(message + 36);
-	w10 = qsc_intutils_be8to32(message + 40);
-	w11 = qsc_intutils_be8to32(message + 44);
-	w12 = qsc_intutils_be8to32(message + 48);
-	w13 = qsc_intutils_be8to32(message + 52);
-	w14 = qsc_intutils_be8to32(message + 56);
-	w15 = qsc_intutils_be8to32(message + 60);
+	w0 = utils_integer_be8to32(message);
+	w1 = utils_integer_be8to32(message + 4);
+	w2 = utils_integer_be8to32(message + 8);
+	w3 = utils_integer_be8to32(message + 12);
+	w4 = utils_integer_be8to32(message + 16);
+	w5 = utils_integer_be8to32(message + 20);
+	w6 = utils_integer_be8to32(message + 24);
+	w7 = utils_integer_be8to32(message + 28);
+	w8 = utils_integer_be8to32(message + 32);
+	w9 = utils_integer_be8to32(message + 36);
+	w10 = utils_integer_be8to32(message + 40);
+	w11 = utils_integer_be8to32(message + 44);
+	w12 = utils_integer_be8to32(message + 48);
+	w13 = utils_integer_be8to32(message + 52);
+	w14 = utils_integer_be8to32(message + 56);
+	w15 = utils_integer_be8to32(message + 60);
 
 	r = h + (((e >> 6) | (e << 26)) ^ ((e >> 11) | (e << 21)) ^ ((e >> 25) | (e << 7))) + ((e & f) ^ (~e & g)) + w0 + 0x428a2f98UL;
 	d += r;
@@ -602,199 +1446,43 @@ void qsc_sha256_permute(uint32_t* output, const uint8_t* message)
 	output[6] += g;
 	output[7] += h;
 }
-#endif
 
-void qsc_sha256_update(qsc_sha256_state* ctx, const uint8_t* message, size_t msglen)
+void sha256_update(sha256_state* ctx, const uint8_t* message, size_t msglen)
 {
 	assert(ctx != NULL);
 	assert(message != NULL);
 
 	if (msglen != 0)
 	{
-		if (ctx->position != 0 && (ctx->position + msglen >= QSC_SHA2_256_RATE))
+		if (ctx->position != 0 && (ctx->position + msglen >= SHA2_256_RATE))
 		{
-			const size_t RMDLEN = QSC_SHA2_256_RATE - ctx->position;
+			const size_t RMDLEN = SHA2_256_RATE - ctx->position;
 
 			if (RMDLEN != 0)
 			{
-				qsc_memutils_copy((ctx->buffer + ctx->position), message, RMDLEN);
+				utils_memory_copy((ctx->buffer + ctx->position), message, RMDLEN);
 			}
 
-			qsc_sha256_permute(ctx->state, ctx->buffer);
-			sha256_increase(ctx, QSC_SHA2_256_RATE);
+			sha256_permute(ctx->state, ctx->buffer);
+			sha256_increase(ctx, SHA2_256_RATE);
 			ctx->position = 0;
 			message += RMDLEN;
 			msglen -= RMDLEN;
 		}
 
 		/* sequential loop through blocks */
-		while (msglen >= QSC_SHA2_256_RATE)
+		while (msglen >= SHA2_256_RATE)
 		{
-			qsc_sha256_permute(ctx->state, message);
-			sha256_increase(ctx, QSC_SHA2_256_RATE);
-			message += QSC_SHA2_256_RATE;
-			msglen -= QSC_SHA2_256_RATE;
+			sha256_permute(ctx->state, message);
+			sha256_increase(ctx, SHA2_256_RATE);
+			message += SHA2_256_RATE;
+			msglen -= SHA2_256_RATE;
 		}
 
 		/* store unaligned bytes */
 		if (msglen != 0)
 		{
-			qsc_memutils_copy((ctx->buffer + ctx->position), message, msglen);
-			ctx->position += msglen;
-		}
-	}
-}
-
-/* SHA2-384 */
-
-static const uint64_t sha384_iv[8] =
-{
-	0xCBBB9D5DC1059ED8ULL,
-	0x629A292A367CD507ULL,
-	0x9159015A3070DD17ULL,
-	0x152FECD8F70E5939ULL,
-	0x67332667FFC00B31ULL,
-	0x8EB44A8768581511ULL,
-	0xDB0C2E0D64F98FA7ULL,
-	0x47B5481DBEFA4FA4ULL
-};
-
-static void sha384_increase(qsc_sha384_state* ctx, size_t length)
-{
-	ctx->t[0] += length;
-
-	if (ctx->t[0] > 0x1FFFFFFFFFFFFFFFULL)
-	{
-		ctx->t[1] += (ctx->t[0] >> 61);
-		ctx->t[0] &= 0x1FFFFFFFFFFFFFFFULL;
-	}
-}
-
-void qsc_sha384_compute(uint8_t* output, const uint8_t* message, size_t msglen)
-{
-	assert(output != NULL);
-	assert(message != NULL);
-
-	qsc_sha384_state ctx;
-
-	qsc_sha384_initialize(&ctx);
-	qsc_sha384_update(&ctx, message, msglen);
-	qsc_sha384_finalize(&ctx, output);
-}
-
-QSC_SYSTEM_OPTIMIZE_IGNORE
-void qsc_sha384_dispose(qsc_sha384_state* ctx)
-{
-	assert(ctx != NULL);
-	
-	if (ctx != NULL)
-	{
-		qsc_memutils_clear((uint8_t*)ctx->state, sizeof(ctx->state));
-		qsc_memutils_clear(ctx->buffer, sizeof(ctx->buffer));
-		ctx->t[0] = 0;
-		ctx->t[1] = 0;
-		ctx->position = 0;
-	}
-}
-QSC_SYSTEM_OPTIMIZE_RESUME
-
-void qsc_sha384_finalize(qsc_sha384_state* ctx, uint8_t* output)
-{
-	assert(ctx != NULL);
-	assert(output != NULL);
-
-	uint8_t pad[QSC_SHA2_384_RATE] = { 0 };
-	uint64_t bitLen;
-
-	sha384_increase(ctx, ctx->position);
-	bitLen = (ctx->t[0] << 3);
-	qsc_memutils_copy(pad, ctx->buffer, ctx->position);
-
-	if (ctx->position == QSC_SHA2_384_RATE)
-	{
-		qsc_sha512_permute(ctx->state, pad);
-		ctx->position = 0;
-	}
-
-	pad[ctx->position] = 128;
-	++ctx->position;
-
-	/* padding */
-	if (ctx->position < QSC_SHA2_384_RATE)
-	{
-		qsc_memutils_clear((pad + ctx->position), QSC_SHA2_384_RATE - ctx->position);
-	}
-
-	if (ctx->position > 112)
-	{
-		qsc_sha512_permute(ctx->state, pad);
-		qsc_memutils_clear(pad, QSC_SHA2_384_RATE);
-	}
-
-	/* finalize state with counter and last compression */
-	qsc_intutils_be64to8((pad + 112), ctx->t[1]);
-	qsc_intutils_be64to8((pad + 120), bitLen);
-	qsc_sha512_permute(ctx->state, pad);
-
-#if defined(QSC_SYSTEM_IS_BIG_ENDIAN)
-	qsc_memutils_copy(output, (uint8_t*)ctx->state, QSC_SHA2_384_HASH_SIZE);
-#else
-	for (size_t i = 0; i < QSC_SHA2_384_HASH_SIZE; i += 8)
-	{
-		qsc_intutils_be64to8((output + i), ctx->state[i / 8]);
-	}
-#endif
-
-	qsc_sha384_dispose(ctx);
-}
-
-void qsc_sha384_initialize(qsc_sha384_state* ctx)
-{
-	assert(ctx != NULL);
-
-	qsc_memutils_copy((uint8_t*)ctx->state, sha384_iv, sizeof(ctx->state));
-	qsc_memutils_clear(ctx->buffer, sizeof(ctx->buffer));
-	ctx->t[0] = 0;
-	ctx->t[1] = 0;
-	ctx->position = 0;
-}
-
-void qsc_sha384_update(qsc_sha384_state* ctx, const uint8_t* message, size_t msglen)
-{
-	assert(ctx != NULL);
-	assert(message != NULL);
-
-	if (msglen != 0)
-	{
-		if (ctx->position != 0 && (ctx->position + msglen >= QSC_SHA2_384_RATE))
-		{
-			const size_t RMDLEN = QSC_SHA2_384_RATE - ctx->position;
-
-			if (RMDLEN != 0)
-			{
-				qsc_memutils_copy((ctx->buffer + ctx->position), message, RMDLEN);
-			}
-
-			qsc_sha512_permute(ctx->state, ctx->buffer);
-			sha384_increase(ctx, QSC_SHA2_384_RATE);
-			ctx->position = 0;
-			message += RMDLEN;
-			msglen -= RMDLEN;
-		}
-
-		/* sequential loop through blocks */
-		while (msglen >= QSC_SHA2_384_RATE)
-		{
-			qsc_sha512_permute(ctx->state, message);
-			sha384_increase(ctx, QSC_SHA2_384_RATE);
-			message += QSC_SHA2_384_RATE;
-			msglen -= QSC_SHA2_384_RATE;
-		}
-
-		/* store unaligned bytes */
-		if (msglen != 0)
-		{
-			qsc_memutils_copy((ctx->buffer + ctx->position), message, msglen);
+			utils_memory_copy((ctx->buffer + ctx->position), message, msglen);
 			ctx->position += msglen;
 		}
 	}
@@ -814,7 +1502,7 @@ static const uint64_t sha512_iv[8] =
 	0x5BE0CD19137E2179ULL
 };
 
-static void sha512_increase(qsc_sha512_state* ctx, size_t length)
+static void sha512_increase(sha512_state* ctx, size_t length)
 {
 	ctx->t[0] += length;
 
@@ -825,49 +1513,49 @@ static void sha512_increase(qsc_sha512_state* ctx, size_t length)
 	}
 }
 
-void qsc_sha512_compute(uint8_t* output, const uint8_t* message, size_t msglen)
+void sha512_compute(uint8_t* output, const uint8_t* message, size_t msglen)
 {
 	assert(output != NULL);
 	assert(message != NULL);
 
-	qsc_sha512_state ctx;
+	sha512_state ctx;
 
-	qsc_sha512_initialize(&ctx);
-	qsc_sha512_update(&ctx, message, msglen);
-	qsc_sha512_finalize(&ctx, output);
+	sha512_initialize(&ctx);
+	sha512_update(&ctx, message, msglen);
+	sha512_finalize(&ctx, output);
 }
 
-QSC_SYSTEM_OPTIMIZE_IGNORE
-void qsc_sha512_dispose(qsc_sha512_state* ctx)
+SYSTEM_OPTIMIZE_IGNORE
+void sha512_dispose(sha512_state* ctx)
 {
 	assert(ctx != NULL);
 	
 	if (ctx != NULL)
 	{
-		qsc_memutils_clear((uint8_t*)ctx->state, sizeof(ctx->state));
-		qsc_memutils_clear(ctx->buffer, sizeof(ctx->buffer));
+		utils_memory_clear((uint8_t*)ctx->state, sizeof(ctx->state));
+		utils_memory_clear(ctx->buffer, sizeof(ctx->buffer));
 		ctx->t[0] = 0;
 		ctx->t[1] = 0;
 		ctx->position = 0;
 	}
 }
-QSC_SYSTEM_OPTIMIZE_RESUME
+SYSTEM_OPTIMIZE_RESUME
 
-void qsc_sha512_finalize(qsc_sha512_state* ctx, uint8_t* output)
+void sha512_finalize(sha512_state* ctx, uint8_t* output)
 {
 	assert(ctx != NULL);
 	assert(output != NULL);
 
-	uint8_t pad[QSC_SHA2_512_RATE] = { 0 };
+	uint8_t pad[SHA2_512_RATE] = { 0 };
 	uint64_t bitLen;
 
 	sha512_increase(ctx, ctx->position);
 	bitLen = (ctx->t[0] << 3);
-	qsc_memutils_copy(pad, ctx->buffer, ctx->position);
+	utils_memory_copy(pad, ctx->buffer, ctx->position);
 
-	if (ctx->position == QSC_SHA2_512_RATE)
+	if (ctx->position == SHA2_512_RATE)
 	{
-		qsc_sha512_permute(ctx->state, pad);
+		sha512_permute(ctx->state, pad);
 		ctx->position = 0;
 	}
 
@@ -875,46 +1563,46 @@ void qsc_sha512_finalize(qsc_sha512_state* ctx, uint8_t* output)
 	++ctx->position;
 
 	/* padding */
-	if (ctx->position < QSC_SHA2_512_RATE)
+	if (ctx->position < SHA2_512_RATE)
 	{
-		qsc_memutils_clear((pad + ctx->position), QSC_SHA2_512_RATE - ctx->position);
+		utils_memory_clear((pad + ctx->position), SHA2_512_RATE - ctx->position);
 	}
 
 	if (ctx->position > 112)
 	{
-		qsc_sha512_permute(ctx->state, pad);
-		qsc_memutils_clear(pad, QSC_SHA2_512_RATE);
+		sha512_permute(ctx->state, pad);
+		utils_memory_clear(pad, SHA2_512_RATE);
 	}
 
 	/* finalize state with counter and last compression */
-	qsc_intutils_be64to8((pad + 112), ctx->t[1]);
-	qsc_intutils_be64to8((pad + 120), bitLen);
-	qsc_sha512_permute(ctx->state, pad);
+	utils_integer_be64to8((pad + 112), ctx->t[1]);
+	utils_integer_be64to8((pad + 120), bitLen);
+	sha512_permute(ctx->state, pad);
 
-#if defined(QSC_SYSTEM_IS_BIG_ENDIAN)
-	qsc_memutils_copy(output, (uint8_t*)ctx->state, QSC_SHA2_512_HASH_SIZE);
+#if defined(SYSTEM_IS_BIG_ENDIAN)
+	utils_memory_copy(output, (uint8_t*)ctx->state, SHA2_512_HASH_SIZE);
 #else
-	for (size_t i = 0; i < QSC_SHA2_512_HASH_SIZE; i += 8)
+	for (size_t i = 0; i < SHA2_512_HASH_SIZE; i += 8)
 	{
-		qsc_intutils_be64to8((output + i), ctx->state[i / 8]);
+		utils_integer_be64to8((output + i), ctx->state[i / 8]);
 	}
 #endif
 
-	qsc_sha512_dispose(ctx);
+	sha512_dispose(ctx);
 }
 
-void qsc_sha512_initialize(qsc_sha512_state* ctx)
+void sha512_initialize(sha512_state* ctx)
 {
 	assert(ctx != NULL);
 
-	qsc_memutils_copy((uint8_t*)ctx->state, sha512_iv, sizeof(ctx->state));
-	qsc_memutils_clear(ctx->buffer, sizeof(ctx->buffer));
+	utils_memory_copy((uint8_t*)ctx->state, sha512_iv, sizeof(ctx->state));
+	utils_memory_clear(ctx->buffer, sizeof(ctx->buffer));
 	ctx->t[0] = 0;
 	ctx->t[1] = 0;
 	ctx->position = 0;
 }
 
-void qsc_sha512_permute(uint64_t* output, const uint8_t* message)
+void sha512_permute(uint64_t* output, const uint8_t* message)
 {
 	assert(output != NULL);
 	assert(message != NULL);
@@ -954,22 +1642,22 @@ void qsc_sha512_permute(uint64_t* output, const uint8_t* message)
 	g = output[6];
 	h = output[7];
 
-	w0 = qsc_intutils_be8to64(message);
-	w1 = qsc_intutils_be8to64(message + 8);
-	w2 = qsc_intutils_be8to64(message + 16);
-	w3 = qsc_intutils_be8to64(message + 24);
-	w4 = qsc_intutils_be8to64(message + 32);
-	w5 = qsc_intutils_be8to64(message + 40);
-	w6 = qsc_intutils_be8to64(message + 48);
-	w7 = qsc_intutils_be8to64(message + 56);
-	w8 = qsc_intutils_be8to64(message + 64);
-	w9 = qsc_intutils_be8to64(message + 72);
-	w10 = qsc_intutils_be8to64(message + 80);
-	w11 = qsc_intutils_be8to64(message + 88);
-	w12 = qsc_intutils_be8to64(message + 96);
-	w13 = qsc_intutils_be8to64(message + 104);
-	w14 = qsc_intutils_be8to64(message + 112);
-	w15 = qsc_intutils_be8to64(message + 120);
+	w0 = utils_integer_be8to64(message);
+	w1 = utils_integer_be8to64(message + 8);
+	w2 = utils_integer_be8to64(message + 16);
+	w3 = utils_integer_be8to64(message + 24);
+	w4 = utils_integer_be8to64(message + 32);
+	w5 = utils_integer_be8to64(message + 40);
+	w6 = utils_integer_be8to64(message + 48);
+	w7 = utils_integer_be8to64(message + 56);
+	w8 = utils_integer_be8to64(message + 64);
+	w9 = utils_integer_be8to64(message + 72);
+	w10 = utils_integer_be8to64(message + 80);
+	w11 = utils_integer_be8to64(message + 88);
+	w12 = utils_integer_be8to64(message + 96);
+	w13 = utils_integer_be8to64(message + 104);
+	w14 = utils_integer_be8to64(message + 112);
+	w15 = utils_integer_be8to64(message + 120);
 
 	r = h + (((e << 50) | (e >> 14)) ^ ((e << 46) | (e >> 18)) ^ ((e << 23) | (e >> 41))) + ((e & f) ^ (~e & g)) + w0 + 0x428a2f98d728ae22ULL;
 	d += r;
@@ -1290,42 +1978,42 @@ void qsc_sha512_permute(uint64_t* output, const uint8_t* message)
 	output[7] += h;
 }
 
-void qsc_sha512_update(qsc_sha512_state* ctx, const uint8_t* message, size_t msglen)
+void sha512_update(sha512_state* ctx, const uint8_t* message, size_t msglen)
 {
 	assert(ctx != NULL);
 	assert(message != NULL);
 
 	if (msglen != 0)
 	{
-		if (ctx->position != 0 && (ctx->position + msglen >= QSC_SHA2_512_RATE))
+		if (ctx->position != 0 && (ctx->position + msglen >= SHA2_512_RATE))
 		{
-			const size_t RMDLEN = QSC_SHA2_512_RATE - ctx->position;
+			const size_t RMDLEN = SHA2_512_RATE - ctx->position;
 
 			if (RMDLEN != 0)
 			{
-				qsc_memutils_copy((ctx->buffer + ctx->position), message, RMDLEN);
+				utils_memory_copy((ctx->buffer + ctx->position), message, RMDLEN);
 			}
 
-			qsc_sha512_permute(ctx->state, ctx->buffer);
-			sha512_increase(ctx, QSC_SHA2_512_RATE);
+			sha512_permute(ctx->state, ctx->buffer);
+			sha512_increase(ctx, SHA2_512_RATE);
 			ctx->position = 0;
 			message += RMDLEN;
 			msglen -= RMDLEN;
 		}
 
 		/* sequential loop through blocks */
-		while (msglen >= QSC_SHA2_512_RATE)
+		while (msglen >= SHA2_512_RATE)
 		{
-			qsc_sha512_permute(ctx->state, message);
-			sha512_increase(ctx, QSC_SHA2_512_RATE);
-			message += QSC_SHA2_512_RATE;
-			msglen -= QSC_SHA2_512_RATE;
+			sha512_permute(ctx->state, message);
+			sha512_increase(ctx, SHA2_512_RATE);
+			message += SHA2_512_RATE;
+			msglen -= SHA2_512_RATE;
 		}
 
 		/* store unaligned bytes */
 		if (msglen != 0)
 		{
-			qsc_memutils_copy((ctx->buffer + ctx->position), message, msglen);
+			utils_memory_copy((ctx->buffer + ctx->position), message, msglen);
 			ctx->position += msglen;
 		}
 	}
@@ -1333,49 +2021,49 @@ void qsc_sha512_update(qsc_sha512_state* ctx, const uint8_t* message, size_t msg
 
 /* HMAC-256 */
 
-void qsc_hmac256_compute(uint8_t* output, const uint8_t* message, size_t msglen, const uint8_t* key, size_t keylen)
+void hmac256_compute(uint8_t* output, const uint8_t* message, size_t msglen, const uint8_t* key, size_t keylen)
 {
 	assert(output != NULL);
 	assert(message != NULL);
 	assert(key != NULL);
 
-	qsc_hmac256_state ctx;
+	hmac256_state ctx;
 
-	qsc_hmac256_initialize(&ctx, key, keylen);
-	qsc_hmac256_update(&ctx, message, msglen);
-	qsc_hmac256_finalize(&ctx, output);
+	hmac256_initialize(&ctx, key, keylen);
+	hmac256_update(&ctx, message, msglen);
+	hmac256_finalize(&ctx, output);
 }
 
-QSC_SYSTEM_OPTIMIZE_IGNORE
-void qsc_hmac256_dispose(qsc_hmac256_state* ctx)
+SYSTEM_OPTIMIZE_IGNORE
+void hmac256_dispose(hmac256_state* ctx)
 {
 	assert(ctx != NULL);
 	
 	if (ctx != NULL)
 	{
-		qsc_memutils_clear(ctx->ipad, sizeof(ctx->ipad));
-		qsc_memutils_clear(ctx->opad, sizeof(ctx->ipad));
-		qsc_sha256_dispose(&ctx->pstate);
+		utils_memory_clear(ctx->ipad, sizeof(ctx->ipad));
+		utils_memory_clear(ctx->opad, sizeof(ctx->ipad));
+		sha256_dispose(&ctx->pstate);
 	}
 }
-QSC_SYSTEM_OPTIMIZE_RESUME
+SYSTEM_OPTIMIZE_RESUME
 
-void qsc_hmac256_finalize(qsc_hmac256_state* ctx, uint8_t* output)
+void hmac256_finalize(hmac256_state* ctx, uint8_t* output)
 {
 	assert(ctx != NULL);
 	assert(output != NULL);
 
-	uint8_t tmpv[QSC_SHA2_256_HASH_SIZE] = { 0 };
+	uint8_t tmpv[SHA2_256_HASH_SIZE] = { 0 };
 
-	qsc_sha256_finalize(&ctx->pstate, tmpv);
-	qsc_sha256_initialize(&ctx->pstate);
-	qsc_sha256_update(&ctx->pstate, ctx->opad, sizeof(ctx->opad));
-	qsc_sha256_update(&ctx->pstate, tmpv, sizeof(tmpv));
-	qsc_sha256_finalize(&ctx->pstate, output);
-	qsc_hmac256_dispose(ctx);
+	sha256_finalize(&ctx->pstate, tmpv);
+	sha256_initialize(&ctx->pstate);
+	sha256_update(&ctx->pstate, ctx->opad, sizeof(ctx->opad));
+	sha256_update(&ctx->pstate, tmpv, sizeof(tmpv));
+	sha256_finalize(&ctx->pstate, output);
+	hmac256_dispose(ctx);
 }
 
-void qsc_hmac256_initialize(qsc_hmac256_state* ctx, const uint8_t* key, size_t keylen)
+void hmac256_initialize(hmac256_state* ctx, const uint8_t* key, size_t keylen)
 {
 	assert(ctx != NULL);
 	assert(key != NULL);
@@ -1383,80 +2071,80 @@ void qsc_hmac256_initialize(qsc_hmac256_state* ctx, const uint8_t* key, size_t k
 	const uint8_t IPAD = 0x36;
 	const uint8_t OPAD = 0x5C;
 
-	qsc_memutils_clear(ctx->ipad, QSC_SHA2_256_RATE);
+	utils_memory_clear(ctx->ipad, SHA2_256_RATE);
 
-	if (keylen > QSC_SHA2_256_RATE)
+	if (keylen > SHA2_256_RATE)
 	{
-		qsc_sha256_initialize(&ctx->pstate);
-		qsc_sha256_update(&ctx->pstate, key, keylen);
-		qsc_sha256_finalize(&ctx->pstate, ctx->ipad);
+		sha256_initialize(&ctx->pstate);
+		sha256_update(&ctx->pstate, key, keylen);
+		sha256_finalize(&ctx->pstate, ctx->ipad);
 	}
 	else
 	{
-		qsc_memutils_copy(ctx->ipad, key, keylen);
+		utils_memory_copy(ctx->ipad, key, keylen);
 	}
 
-	qsc_memutils_copy(ctx->opad, ctx->ipad, QSC_SHA2_256_RATE);
-	qsc_memutils_xorv(ctx->opad, OPAD, QSC_SHA2_256_RATE);
-	qsc_memutils_xorv(ctx->ipad, IPAD, QSC_SHA2_256_RATE);
+	utils_memory_copy(ctx->opad, ctx->ipad, SHA2_256_RATE);
+	utils_memory_xorv(ctx->opad, OPAD, SHA2_256_RATE);
+	utils_memory_xorv(ctx->ipad, IPAD, SHA2_256_RATE);
 
-	qsc_sha256_initialize(&ctx->pstate);
-	qsc_sha256_update(&ctx->pstate, ctx->ipad, sizeof(ctx->ipad));
+	sha256_initialize(&ctx->pstate);
+	sha256_update(&ctx->pstate, ctx->ipad, sizeof(ctx->ipad));
 }
 
-void qsc_hmac256_update(qsc_hmac256_state* ctx, const uint8_t* message, size_t msglen)
+void hmac256_update(hmac256_state* ctx, const uint8_t* message, size_t msglen)
 {
 	assert(ctx != NULL);
 	assert(message != NULL);
 
-	qsc_sha256_update(&ctx->pstate, message, msglen);
+	sha256_update(&ctx->pstate, message, msglen);
 }
 
 /* HMAC-512 */
 
-void qsc_hmac512_compute(uint8_t* output, const uint8_t* message, size_t msglen, const uint8_t* key, size_t keylen)
+void hmac512_compute(uint8_t* output, const uint8_t* message, size_t msglen, const uint8_t* key, size_t keylen)
 {
 	assert(output != NULL);
 	assert(message != NULL);
 	assert(key != NULL);
 
-	qsc_hmac512_state ctx;
+	hmac512_state ctx;
 
-	qsc_hmac512_initialize(&ctx, key, keylen);
-	qsc_hmac512_update(&ctx, message, msglen);
-	qsc_hmac512_finalize(&ctx, output);
+	hmac512_initialize(&ctx, key, keylen);
+	hmac512_update(&ctx, message, msglen);
+	hmac512_finalize(&ctx, output);
 }
 
-QSC_SYSTEM_OPTIMIZE_IGNORE
-void qsc_hmac512_dispose(qsc_hmac512_state* ctx)
+SYSTEM_OPTIMIZE_IGNORE
+void hmac512_dispose(hmac512_state* ctx)
 {
 	assert(ctx != NULL);
 	
 	if (ctx != NULL)
 	{
-		qsc_memutils_clear(ctx->ipad, sizeof(ctx->ipad));
-		qsc_memutils_clear(ctx->opad, sizeof(ctx->ipad));
-		qsc_sha512_dispose(&ctx->pstate);
+		utils_memory_clear(ctx->ipad, sizeof(ctx->ipad));
+		utils_memory_clear(ctx->opad, sizeof(ctx->ipad));
+		sha512_dispose(&ctx->pstate);
 	}
 }
-QSC_SYSTEM_OPTIMIZE_RESUME
+SYSTEM_OPTIMIZE_RESUME
 
-void qsc_hmac512_finalize(qsc_hmac512_state* ctx, uint8_t* output)
+void hmac512_finalize(hmac512_state* ctx, uint8_t* output)
 {
 	assert(ctx != NULL);
 	assert(output != NULL);
 
-	uint8_t tmpv[QSC_SHA2_512_HASH_SIZE] = { 0 };
+	uint8_t tmpv[SHA2_512_HASH_SIZE] = { 0 };
 
-	qsc_sha512_finalize(&ctx->pstate, tmpv);
-	qsc_sha512_initialize(&ctx->pstate);
-	qsc_sha512_update(&ctx->pstate, ctx->opad, sizeof(ctx->opad));
-	qsc_sha512_update(&ctx->pstate, tmpv, sizeof(tmpv));
-	qsc_sha512_finalize(&ctx->pstate, output);
-	qsc_hmac512_dispose(ctx);
+	sha512_finalize(&ctx->pstate, tmpv);
+	sha512_initialize(&ctx->pstate);
+	sha512_update(&ctx->pstate, ctx->opad, sizeof(ctx->opad));
+	sha512_update(&ctx->pstate, tmpv, sizeof(tmpv));
+	sha512_finalize(&ctx->pstate, output);
+	hmac512_dispose(ctx);
 }
 
-void qsc_hmac512_initialize(qsc_hmac512_state* ctx, const uint8_t* key, size_t keylen)
+void hmac512_initialize(hmac512_state* ctx, const uint8_t* key, size_t keylen)
 {
 	assert(ctx != NULL);
 	assert(key != NULL);
@@ -1464,153 +2152,153 @@ void qsc_hmac512_initialize(qsc_hmac512_state* ctx, const uint8_t* key, size_t k
 	const uint8_t IPAD = 0x36;
 	const uint8_t OPAD = 0x5C;
 
-	qsc_memutils_clear(ctx->ipad, QSC_SHA2_512_RATE);
+	utils_memory_clear(ctx->ipad, SHA2_512_RATE);
 
-	if (keylen > QSC_SHA2_512_RATE)
+	if (keylen > SHA2_512_RATE)
 	{
-		qsc_sha512_initialize(&ctx->pstate);
-		qsc_sha512_update(&ctx->pstate, key, keylen);
-		qsc_sha512_finalize(&ctx->pstate, ctx->ipad);
+		sha512_initialize(&ctx->pstate);
+		sha512_update(&ctx->pstate, key, keylen);
+		sha512_finalize(&ctx->pstate, ctx->ipad);
 	}
 	else
 	{
-		qsc_memutils_copy(ctx->ipad, key, keylen);
+		utils_memory_copy(ctx->ipad, key, keylen);
 	}
 
-	qsc_memutils_copy(ctx->opad, ctx->ipad, QSC_SHA2_512_RATE);
-	qsc_memutils_xorv(ctx->opad, OPAD, QSC_SHA2_512_RATE);
-	qsc_memutils_xorv(ctx->ipad, IPAD, QSC_SHA2_512_RATE);
+	utils_memory_copy(ctx->opad, ctx->ipad, SHA2_512_RATE);
+	utils_memory_xorv(ctx->opad, OPAD, SHA2_512_RATE);
+	utils_memory_xorv(ctx->ipad, IPAD, SHA2_512_RATE);
 
-	qsc_sha512_initialize(&ctx->pstate);
-	qsc_sha512_update(&ctx->pstate, ctx->ipad, sizeof(ctx->ipad));
+	sha512_initialize(&ctx->pstate);
+	sha512_update(&ctx->pstate, ctx->ipad, sizeof(ctx->ipad));
 }
 
-void qsc_hmac512_update(qsc_hmac512_state* ctx, const uint8_t* message, size_t msglen)
+void hmac512_update(hmac512_state* ctx, const uint8_t* message, size_t msglen)
 {
 	assert(ctx != NULL);
 	assert(message != NULL);
 
-	qsc_sha512_update(&ctx->pstate, message, msglen);
+	sha512_update(&ctx->pstate, message, msglen);
 }
 
 /* HKDF-256 */
 
-void qsc_hkdf256_expand(uint8_t* output, size_t outlen, const uint8_t* key, size_t keylen, const uint8_t* info, size_t infolen)
+void hkdf256_expand(uint8_t* output, size_t outlen, const uint8_t* key, size_t keylen, const uint8_t* info, size_t infolen)
 {
 	assert(output != NULL);
 	assert(key != NULL);
 
-	qsc_hmac256_state ctx;
-	uint8_t buf[QSC_SHA2_256_HASH_SIZE] = { 0 };
+	hmac256_state ctx;
+	uint8_t buf[SHA2_256_HASH_SIZE] = { 0 };
 	uint8_t ctr[1] = { 0 };
 
 	while (outlen != 0)
 	{
-		qsc_hmac256_initialize(&ctx, key, keylen);
+		hmac256_initialize(&ctx, key, keylen);
 
 		if (ctr[0] != 0)
 		{
-			qsc_hmac256_update(&ctx, buf, sizeof(buf));
+			hmac256_update(&ctx, buf, sizeof(buf));
 		}
 
 		if (infolen != 0)
 		{
-			qsc_hmac256_update(&ctx, info, infolen);
+			hmac256_update(&ctx, info, infolen);
 		}
 
 		++ctr[0];
-		qsc_hmac256_update(&ctx, ctr, sizeof(ctr));
-		qsc_hmac256_finalize(&ctx, buf);
+		hmac256_update(&ctx, ctr, sizeof(ctr));
+		hmac256_finalize(&ctx, buf);
 
-		const size_t RMDLEN = qsc_intutils_min(outlen, (size_t)QSC_SHA2_256_HASH_SIZE);
-		qsc_memutils_copy(output, buf, RMDLEN);
+		const size_t RMDLEN = utils_integer_min(outlen, (size_t)SHA2_256_HASH_SIZE);
+		utils_memory_copy(output, buf, RMDLEN);
 
 		outlen -= RMDLEN;
 		output += RMDLEN;
 	}
 }
 
-void qsc_hkdf256_extract(uint8_t* output, size_t outlen, const uint8_t* key, size_t keylen, const uint8_t* salt, size_t saltlen)
+void hkdf256_extract(uint8_t* output, size_t outlen, const uint8_t* key, size_t keylen, const uint8_t* salt, size_t saltlen)
 {
 	assert(output != NULL);
 	assert(key != NULL);
 
 	if (outlen >= 32)
     {
-        qsc_hmac256_state ctx;
+        hmac256_state ctx;
 
         if (saltlen != 0)
         {
-            qsc_hmac256_initialize(&ctx, salt, saltlen);
+            hmac256_initialize(&ctx, salt, saltlen);
         }
         else
         {
-            uint8_t tmp[QSC_HMAC_256_MAC_SIZE] = { 0 };
-            qsc_hmac256_initialize(&ctx, tmp, sizeof(tmp));
+            uint8_t tmp[HMAC_256_MAC_SIZE] = { 0 };
+            hmac256_initialize(&ctx, tmp, sizeof(tmp));
         }
 
-        qsc_hmac256_update(&ctx, key, keylen);
-        qsc_hmac256_finalize(&ctx, output);
+        hmac256_update(&ctx, key, keylen);
+        hmac256_finalize(&ctx, output);
     }
 }
 
 /* HKDF-512 */
 
-void qsc_hkdf512_expand(uint8_t* output, size_t outlen, const uint8_t* key, size_t keylen, const uint8_t* info, size_t infolen)
+void hkdf512_expand(uint8_t* output, size_t outlen, const uint8_t* key, size_t keylen, const uint8_t* info, size_t infolen)
 {
 	assert(output != NULL);
 	assert(key != NULL);
 
-	qsc_hmac512_state ctx;
-	uint8_t buf[QSC_SHA2_512_HASH_SIZE] = { 0 };
+	hmac512_state ctx;
+	uint8_t buf[SHA2_512_HASH_SIZE] = { 0 };
 	uint8_t ctr[1] = { 0 };
 
 	while (outlen != 0)
 	{
-		qsc_hmac512_initialize(&ctx, key, keylen);
+		hmac512_initialize(&ctx, key, keylen);
 
 		if (ctr[0] != 0)
 		{
-			qsc_hmac512_update(&ctx, buf, sizeof(buf));
+			hmac512_update(&ctx, buf, sizeof(buf));
 		}
 
 		if (infolen != 0)
 		{
-			qsc_hmac512_update(&ctx, info, infolen);
+			hmac512_update(&ctx, info, infolen);
 		}
 
 		++ctr[0];
-		qsc_hmac512_update(&ctx, ctr, sizeof(ctr));
-		qsc_hmac512_finalize(&ctx, buf);
+		hmac512_update(&ctx, ctr, sizeof(ctr));
+		hmac512_finalize(&ctx, buf);
 
-		const size_t RMDLEN = qsc_intutils_min(outlen, (size_t)QSC_SHA2_512_HASH_SIZE);
-		qsc_memutils_copy(output, buf, RMDLEN);
+		const size_t RMDLEN = utils_integer_min(outlen, (size_t)SHA2_512_HASH_SIZE);
+		utils_memory_copy(output, buf, RMDLEN);
 
 		outlen -= RMDLEN;
 		output += RMDLEN;
 	}
 }
 
-void qsc_hkdf512_extract(uint8_t* output, size_t outlen, const uint8_t* key, size_t keylen, const uint8_t* salt, size_t saltlen)
+void hkdf512_extract(uint8_t* output, size_t outlen, const uint8_t* key, size_t keylen, const uint8_t* salt, size_t saltlen)
 {
 	assert(output != NULL);
 	assert(key != NULL);
 
     if (outlen >= 64)
     {
-        qsc_hmac512_state ctx;
+        hmac512_state ctx;
 
         if (saltlen != 0)
         {
-            qsc_hmac512_initialize(&ctx, salt, saltlen);
+            hmac512_initialize(&ctx, salt, saltlen);
         }
         else
         {
-            uint8_t tmp[QSC_HMAC_512_MAC_SIZE] = { 0 };
-            qsc_hmac512_initialize(&ctx, tmp, sizeof(tmp));
+            uint8_t tmp[HMAC_512_MAC_SIZE] = { 0 };
+            hmac512_initialize(&ctx, tmp, sizeof(tmp));
         }
 
-        qsc_hmac512_update(&ctx, key, keylen);
-        qsc_hmac512_finalize(&ctx, output);
+        hmac512_update(&ctx, key, keylen);
+        hmac512_finalize(&ctx, output);
     }
 }

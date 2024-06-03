@@ -1,6 +1,5 @@
 #include "rhx.h"
-#include "intutils.h"
-#include "memutils.h"
+#include "utils.h"
 
 /*!
 \def AES128_ROUND_COUNT
@@ -30,7 +29,7 @@
 \def ROUNDKEY_ELEMENT_SIZE
 * The round key element size in bytes.
 */
-#if defined(QSC_SYSTEM_AESNI_ENABLED)
+#if defined(SYSTEM_AESNI_ENABLED)
 #	define ROUNDKEY_ELEMENT_SIZE 16
 #else
 #	define ROUNDKEY_ELEMENT_SIZE 4
@@ -41,35 +40,35 @@
 \def RHX_NONCE_SIZE
 * The size byte size of the CTR nonce and CBC initialization vector.
 */
-#define RHX_NONCE_SIZE QSC_RHX_BLOCK_SIZE
+#define RHX_NONCE_SIZE RHX_BLOCK_SIZE
 
 /*!
 \def AES128_ROUNDKEY_SIZE
 * The size of the AES-128 internal round-key array in bytes.
-* Use this macro to define the size of the round-key array in an qsc_rhx_state struct.
+* Use this macro to define the size of the round-key array in an rhx_state struct.
 */
-#define AES128_ROUNDKEY_SIZE ((AES128_ROUND_COUNT + 1) * (QSC_RHX_BLOCK_SIZE / ROUNDKEY_ELEMENT_SIZE))
+#define AES128_ROUNDKEY_SIZE ((AES128_ROUND_COUNT + 1) * (RHX_BLOCK_SIZE / ROUNDKEY_ELEMENT_SIZE))
 
 /*!
 \def AES256_ROUNDKEY_SIZE
 * The size of the AES-256 internal round-key array in bytes.
-* Use this macro to define the size of the round-key array in an qsc_rhx_state struct.
+* Use this macro to define the size of the round-key array in an rhx_state struct.
 */
-#define AES256_ROUNDKEY_SIZE ((AES256_ROUND_COUNT + 1) * (QSC_RHX_BLOCK_SIZE / ROUNDKEY_ELEMENT_SIZE))
+#define AES256_ROUNDKEY_SIZE ((AES256_ROUND_COUNT + 1) * (RHX_BLOCK_SIZE / ROUNDKEY_ELEMENT_SIZE))
 
 /*!
 \def RHX256_ROUNDKEY_SIZE
 * The size of the RHX-256 internal round-key array in bytes.
-* Use this macro to define the size of the round-key array in an qsc_rhx_state struct.
+* Use this macro to define the size of the round-key array in an rhx_state struct.
 */
-#define RHX256_ROUNDKEY_SIZE ((RHX256_ROUND_COUNT + 1) * (QSC_RHX_BLOCK_SIZE / ROUNDKEY_ELEMENT_SIZE))
+#define RHX256_ROUNDKEY_SIZE ((RHX256_ROUND_COUNT + 1) * (RHX_BLOCK_SIZE / ROUNDKEY_ELEMENT_SIZE))
 
 /*!
 \def RHX512_ROUNDKEY_SIZE
 * The size of the RHX-512 internal round-key array in bytes.
-* Use this macro to define the size of the round-key array in an qsc_rhx_state struct.
+* Use this macro to define the size of the round-key array in an rhx_state struct.
 */
-#define RHX512_ROUNDKEY_SIZE ((RHX512_ROUND_COUNT + 1) * (QSC_RHX_BLOCK_SIZE / ROUNDKEY_ELEMENT_SIZE))
+#define RHX512_ROUNDKEY_SIZE ((RHX512_ROUND_COUNT + 1) * (RHX_BLOCK_SIZE / ROUNDKEY_ELEMENT_SIZE))
 
 /*!
 \def RHX_INFO_DEFLEN
@@ -83,7 +82,7 @@
 \def AVX512_BLOCK_SIZE
 * The size byte size of an AVX512 block
 */
-#define AVX512_BLOCK_SIZE (4 * QSC_RHX_BLOCK_SIZE)
+#define AVX512_BLOCK_SIZE (4 * RHX_BLOCK_SIZE)
 
 /* HBA */
 
@@ -109,14 +108,14 @@
 \def HBA_NAME_LENGTH
 * The HBA implementation specific name array length.
 */
-#if defined(QSC_RHX_SHAKE_EXTENSION)
+#if defined(RHX_SHAKE_EXTENSION)
 #	define HBA_NAME_LENGTH 29
 #else
 #	define HBA_NAME_LENGTH 33
 #endif
 
 /* default info parameter string literals */
-#if defined(QSC_RHX_SHAKE_EXTENSION)
+#if defined(RHX_SHAKE_EXTENSION)
 /* RHXS256 */
 static const uint8_t RHX_CSHAKE256_INFO[7] = { 82, 72, 88, 83, 50, 53, 54 };
 /* RHXS512 */
@@ -130,17 +129,17 @@ static const uint8_t RHX_HKDF512_INFO[7] = { 82, 72, 88, 72, 53, 49, 50 };
 
 /* aes-ni and table-based fallback functions */
 
-#if defined(QSC_SYSTEM_AESNI_ENABLED)
+#if defined(SYSTEM_AESNI_ENABLED)
 
 static void rhx_beincrement_x128(__m128i* counter)
 {
 	__m128i tmp;
-	qsc_intutils_reverse_bytes_x128(counter, &tmp);
+	utils_integer_reverse_bytes_x128(counter, &tmp);
 	tmp = _mm_add_epi64(tmp, _mm_set_epi64x(0, 1));
-	qsc_intutils_reverse_bytes_x128(&tmp, counter);
+	utils_integer_reverse_bytes_x128(&tmp, counter);
 }
 
-static void rhx_decrypt_block(qsc_rhx_state* state, __m128i* output, const __m128i* input)
+static void rhx_decrypt_block(const rhx_state* state, __m128i* output, const __m128i* input)
 {
 	const size_t RNDCNT = state->roundkeylen - 2;
 	size_t keyctr;
@@ -158,7 +157,7 @@ static void rhx_decrypt_block(qsc_rhx_state* state, __m128i* output, const __m12
 	*output = _mm_aesdeclast_si128(*output, state->roundkeys[keyctr]);
 }
 
-static void rhx_encrypt_block(qsc_rhx_state* state, __m128i* output, const __m128i* input)
+static void rhx_encrypt_block(const rhx_state* state, __m128i* output, const __m128i* input)
 {
 	const size_t RNDCNT = state->roundkeylen - 2;
 	size_t keyctr;
@@ -184,8 +183,8 @@ static void rhx_le128to8(uint8_t* input, size_t inplen, __m128i* output, size_t 
 	// swap endianess
 	for (i = 0; i < inplen; i += sizeof(uint32_t))
 	{
-		tmpk = qsc_intutils_be8to32((uint8_t*)(input + i));
-		qsc_intutils_le32to8((uint8_t*)(input + i), tmpk);
+		tmpk = utils_integer_be8to32((uint8_t*)(input + i));
+		utils_integer_le32to8((uint8_t*)(input + i), tmpk);
 	}
 
 	for (i = 0; i < outlen; ++i)
@@ -194,13 +193,13 @@ static void rhx_le128to8(uint8_t* input, size_t inplen, __m128i* output, size_t 
 	}
 }
 
-#if defined(QSC_SYSTEM_HAS_AVX512)
+#if defined(SYSTEM_HAS_AVX512)
 static void rhx_beincrement_x512(__m512i* counter)
 {
 	__m512i tmp;
-	qsc_intutils_reverse_bytes_x512(counter, &tmp);
+	utils_integer_reverse_bytes_x512(counter, &tmp);
 	tmp = _mm512_add_epi64(tmp, _mm512_set_epi64(0, 4, 0, 4, 0, 4, 0, 4));
-	qsc_intutils_reverse_bytes_x512(&tmp, counter);
+	utils_integer_reverse_bytes_x512(&tmp, counter);
 }
 
 static void rhx_load128to512(__m128i* input, __m512i* output)
@@ -212,7 +211,7 @@ static void rhx_load128to512(__m128i* input, __m512i* output)
 	*output = _mm512_inserti32x4(*output, *input, 3);
 }
 
-static void rhx_decrypt_blockw(qsc_rhx_state* state, __m512i* output, const __m512i* input)
+static void rhx_decrypt_blockw(rhx_state* state, __m512i* output, const __m512i* input)
 {
 	const size_t RNDCNT = state->roundkeylen - 2;
 	size_t keyctr;
@@ -230,7 +229,7 @@ static void rhx_decrypt_blockw(qsc_rhx_state* state, __m512i* output, const __m5
 	*output = _mm512_aesdeclast_epi128(*output, state->roundkeysw[keyctr]);
 }
 
-static void rhx_encrypt_blockw(qsc_rhx_state* state, __m512i* output, const __m512i* input)
+static void rhx_encrypt_blockw(rhx_state* state, __m512i* output, const __m512i* input)
 {
 	const size_t RNDCNT = state->roundkeylen - 2;
 	size_t keyctr;
@@ -273,33 +272,33 @@ static void rhx_expand_sub(__m128i* Key, size_t Index, size_t Offset)
 	Key[Index] = _mm_xor_si128(pkb, Key[Index]);
 }
 
-static void rhx_secure_expand(qsc_rhx_state* state, const qsc_rhx_keyparams* keyparams)
+static void rhx_secure_expand(rhx_state* state, const rhx_keyparams* keyparams)
 {
 	uint8_t tmpi[256] = { 0 };
 	uint16_t kblen;
 	size_t inlen;
 
-	qsc_memutils_clear(tmpi, RHX_INFO_DEFLEN + keyparams->infolen);
+	utils_memory_clear(tmpi, RHX_INFO_DEFLEN + keyparams->infolen);
 
 	/* add the ciphers string literal name */
-	if (keyparams->keylen == QSC_RHX256_KEY_SIZE)
+	if (keyparams->keylen == RHX_RHX256_KEY_SIZE)
 	{
-#if defined(QSC_RHX_SHAKE_EXTENSION)
+#if defined(RHX_SHAKE_EXTENSION)
 		/* RHXS256 */
-		qsc_memutils_copy(tmpi, RHX_CSHAKE256_INFO, sizeof(RHX_CSHAKE256_INFO));
+		utils_memory_copy(tmpi, RHX_CSHAKE256_INFO, sizeof(RHX_CSHAKE256_INFO));
 #else
 		/* RHXH256 */
-		qsc_memutils_copy(tmpi, RHX_HKDF256_INFO, sizeof(RHX_HKDF256_INFO));
+		utils_memory_copy(tmpi, RHX_HKDF256_INFO, sizeof(RHX_HKDF256_INFO));
 #endif
 	}
 	else
 	{
-#if defined(QSC_RHX_SHAKE_EXTENSION)
+#if defined(RHX_SHAKE_EXTENSION)
 		/* RHXS512 */
-		qsc_memutils_copy(tmpi, RHX_CSHAKE512_INFO, sizeof(RHX_CSHAKE512_INFO));
+		utils_memory_copy(tmpi, RHX_CSHAKE512_INFO, sizeof(RHX_CSHAKE512_INFO));
 #else
 		/* RHXH512 */
-		qsc_memutils_copy(tmpi, RHX_HKDF512_INFO, sizeof(RHX_HKDF512_INFO));
+		utils_memory_copy(tmpi, RHX_HKDF512_INFO, sizeof(RHX_HKDF512_INFO));
 #endif
 	}
 
@@ -311,17 +310,17 @@ static void rhx_secure_expand(qsc_rhx_state* state, const qsc_rhx_keyparams* key
 	/* copy user-defined tweak to the info array */
 	if (keyparams->infolen != 0)
 	{
-		inlen = qsc_intutils_min(keyparams->infolen, sizeof(tmpi) - RHX_INFO_DEFLEN);
-		qsc_memutils_copy((uint8_t*)(tmpi + RHX_INFO_DEFLEN), keyparams->info, inlen);
+		inlen = utils_integer_min(keyparams->infolen, sizeof(tmpi) - RHX_INFO_DEFLEN);
+		utils_memory_copy((uint8_t*)(tmpi + RHX_INFO_DEFLEN), keyparams->info, inlen);
 	}
 
-#if defined(QSC_RHX_SHAKE_EXTENSION)
-	if (keyparams->keylen == QSC_RHX256_KEY_SIZE)
+#if defined(RHX_SHAKE_EXTENSION)
+	if (keyparams->keylen == RHX_RHX256_KEY_SIZE)
 	{
 		uint8_t rk[(RHX256_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE)] = { 0 };
 
 		/* generate the round-key buffer with cSHAKE-256 */
-		qsc_cshake256_compute(rk, sizeof(rk), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen, NULL, 0);
+		cshake256_compute(rk, sizeof(rk), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen, NULL, 0);
 		/* convert the bytes to little endian encoded 128-bit integers */
 		rhx_le128to8(rk, sizeof(rk), state->roundkeys, state->roundkeylen);
 	}
@@ -330,17 +329,17 @@ static void rhx_secure_expand(qsc_rhx_state* state, const qsc_rhx_keyparams* key
 		uint8_t rk[(RHX512_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE)] = { 0 };
 
 		/* generate the round-key buffer with cSHAKE-512 */
-		qsc_cshake512_compute(rk, sizeof(rk), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen, NULL, 0);
+		cshake512_compute(rk, sizeof(rk), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen, NULL, 0);
 		/* convert the bytes to little endian encoded 128-bit integers */
 		rhx_le128to8(rk, sizeof(rk), state->roundkeys, state->roundkeylen);
 	}
 #else
-	if (keyparams->keylen == QSC_RHX256_KEY_SIZE)
+	if (keyparams->keylen == RHX_RHX256_KEY_SIZE)
 	{
 		uint8_t rk[RHX256_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE] = { 0 };
 
 		/* generate the round-key buffer with HKDF(HMAC(SHA2-256)) */
-		qsc_hkdf256_expand(rk, sizeof(rk), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen);
+		hkdf256_expand(rk, sizeof(rk), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen);
 		/* convert the bytes to little endian encoded 128-bit integers */
 		rhx_le128to8(rk, sizeof(rk), state->roundkeys, state->roundkeylen);
 	}
@@ -349,7 +348,7 @@ static void rhx_secure_expand(qsc_rhx_state* state, const qsc_rhx_keyparams* key
 		uint8_t rk[(RHX512_ROUNDKEY_SIZE * ROUNDKEY_ELEMENT_SIZE)] = { 0 };
 
 		/* generate the round-key buffer with HKDF(HMAC(SHA2-512)) */
-		qsc_hkdf512_expand(rk, sizeof(rk), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen);
+		hkdf512_expand(rk, sizeof(rk), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen);
 		/* convert the bytes to little endian encoded 128-bit integers */
 		rhx_le128to8(rk, sizeof(rk), state->roundkeys, state->roundkeylen);
 	}
@@ -357,7 +356,7 @@ static void rhx_secure_expand(qsc_rhx_state* state, const qsc_rhx_keyparams* key
 
 }
 
-static void rhx_standard_expand(qsc_rhx_state* state, const qsc_rhx_keyparams* keyparams)
+static void rhx_standard_expand(rhx_state* state, const rhx_keyparams* keyparams)
 {
 	size_t kwords;
 
@@ -415,7 +414,7 @@ static void rhx_standard_expand(qsc_rhx_state* state, const qsc_rhx_keyparams* k
 	}
 }
 
-void qsc_rhx_initialize(qsc_rhx_state* state, const qsc_rhx_keyparams* keyparams, bool encryption, qsc_rhx_cipher_type ctype)
+void rhx_initialize(rhx_state* state, const rhx_keyparams* keyparams, bool encryption, rhx_cipher_type ctype)
 {
 	assert(state != NULL);
 	assert(keyparams != NULL);
@@ -425,7 +424,7 @@ void qsc_rhx_initialize(qsc_rhx_state* state, const qsc_rhx_keyparams* keyparams
 		state->nonce = keyparams->nonce;
 	}
 
-	qsc_memutils_clear((uint8_t*)state->roundkeys, sizeof(state->roundkeys));
+	utils_memory_clear((uint8_t*)state->roundkeys, sizeof(state->roundkeys));
 
 	if (ctype == RHX256)
 	{
@@ -477,10 +476,10 @@ void qsc_rhx_initialize(qsc_rhx_state* state, const qsc_rhx_keyparams* keyparams
 		state->roundkeys[i] = _mm_aesimc_si128(state->roundkeys[i]);
 	}
 
-#if defined(QSC_SYSTEM_HAS_AVX512)
+#if defined(SYSTEM_HAS_AVX512)
 	size_t i;
 
-	qsc_memutils_clear((uint8_t*)state->roundkeysw, sizeof(state->roundkeysw));
+	utils_memory_clear((uint8_t*)state->roundkeysw, sizeof(state->roundkeysw));
 
 	for (i = 0; i < state->rounds + 1; ++i)
 	{
@@ -492,7 +491,7 @@ void qsc_rhx_initialize(qsc_rhx_state* state, const qsc_rhx_keyparams* keyparams
 
 /* cbc mode */
 
-void qsc_rhx_cbc_decrypt(qsc_rhx_state* state, uint8_t* output, size_t *outputlen, const uint8_t* input, size_t inputlen)
+void rhx_cbc_decrypt(rhx_state* state, uint8_t* output, size_t *outputlen, const uint8_t* input, size_t inputlen)
 {
 	assert(state != NULL);
 	assert(input != NULL);
@@ -506,7 +505,7 @@ void qsc_rhx_cbc_decrypt(qsc_rhx_state* state, uint8_t* output, size_t *outputle
 
 	oft = 0;
 
-#if defined(QSC_SYSTEM_HAS_AVX512)
+#if defined(SYSTEM_HAS_AVX512)
 
 	if (inputlen > AVX512_BLOCK_SIZE)
 	{
@@ -516,8 +515,8 @@ void qsc_rhx_cbc_decrypt(qsc_rhx_state* state, uint8_t* output, size_t *outputle
 		uint8_t ivtb[AVX512_BLOCK_SIZE];
 
 		/* assemble the first block in the chain */
-		qsc_memutils_copy(ivtb, state->nonce, QSC_RHX_BLOCK_SIZE);
-		qsc_memutils_copy((uint8_t*)(ivtb + QSC_RHX_BLOCK_SIZE), input, 3 * QSC_RHX_BLOCK_SIZE);
+		utils_memory_copy(ivtb, state->nonce, RHX_BLOCK_SIZE);
+		utils_memory_copy((uint8_t*)(ivtb + RHX_BLOCK_SIZE), input, 3 * RHX_BLOCK_SIZE);
 		ivtw = _mm512_loadu_si512((const __m512i*)ivtb);
 
 		/* process the first block */
@@ -533,7 +532,7 @@ void qsc_rhx_cbc_decrypt(qsc_rhx_state* state, uint8_t* output, size_t *outputle
 		/* process remaining blocks */
 		while (inputlen > AVX512_BLOCK_SIZE)
 		{
-			qsc_memutils_copy(ivtb, (uint8_t*)(input + (oft - QSC_RHX_BLOCK_SIZE)), AVX512_BLOCK_SIZE);
+			utils_memory_copy(ivtb, (uint8_t*)(input + (oft - RHX_BLOCK_SIZE)), AVX512_BLOCK_SIZE);
 			ivtw = _mm512_loadu_si512((const __m512i*)ivtb);
 			inpw = _mm512_loadu_si512((const __m512i*)((uint8_t*)(input + oft)));
 
@@ -545,17 +544,17 @@ void qsc_rhx_cbc_decrypt(qsc_rhx_state* state, uint8_t* output, size_t *outputle
 			oft += AVX512_BLOCK_SIZE;
 		}
 
-		qsc_memutils_copy(state->nonce, (uint8_t*)(input + (oft - QSC_RHX_BLOCK_SIZE)), QSC_RHX_BLOCK_SIZE);
+		utils_memory_copy(state->nonce, (uint8_t*)(input + (oft - RHX_BLOCK_SIZE)), RHX_BLOCK_SIZE);
 	}
 
 #endif
 
-	if (inputlen > QSC_RHX_BLOCK_SIZE)
+	if (inputlen > RHX_BLOCK_SIZE)
 	{
 		ivt = _mm_loadu_si128((const __m128i*)state->nonce);
 		inp = _mm_setzero_si128();
 
-		while (inputlen > QSC_RHX_BLOCK_SIZE)
+		while (inputlen > RHX_BLOCK_SIZE)
 		{
 			inp = _mm_loadu_si128((const __m128i*)(uint8_t*)(input + oft));
 
@@ -565,21 +564,21 @@ void qsc_rhx_cbc_decrypt(qsc_rhx_state* state, uint8_t* output, size_t *outputle
 			_mm_storeu_si128((__m128i*) & ivt, inp);
 			_mm_storeu_si128((__m128i*)(uint8_t*)(output + oft), otp);
 
-			inputlen -= QSC_RHX_BLOCK_SIZE;
-			oft += QSC_RHX_BLOCK_SIZE;
+			inputlen -= RHX_BLOCK_SIZE;
+			oft += RHX_BLOCK_SIZE;
 		}
 
 		_mm_storeu_si128((__m128i*)state->nonce, inp);
 	}
 
-	uint8_t tmpb[QSC_RHX_BLOCK_SIZE] = { 0 };
-	qsc_rhx_cbc_decrypt_block(state, tmpb, (uint8_t*)(input + oft));
-	len = qsc_pkcs7_padding_length(tmpb);
-	qsc_memutils_copy((uint8_t*)(output + oft), tmpb, QSC_RHX_BLOCK_SIZE - len);
-	*outputlen = oft + (QSC_RHX_BLOCK_SIZE - len);
+	uint8_t tmpb[RHX_BLOCK_SIZE] = { 0 };
+	rhx_cbc_decrypt_block(state, tmpb, (uint8_t*)(input + oft));
+	len = rhx_pkcs7_padding_length(tmpb);
+	utils_memory_copy((uint8_t*)(output + oft), tmpb, RHX_BLOCK_SIZE - len);
+	*outputlen = oft + (RHX_BLOCK_SIZE - len);
 }
 
-void qsc_rhx_cbc_encrypt(qsc_rhx_state* state, uint8_t* output, const uint8_t* input, size_t inputlen)
+void rhx_cbc_encrypt(rhx_state* state, uint8_t* output, const uint8_t* input, size_t inputlen)
 {
 	assert(state != NULL);
 	assert(input != NULL);
@@ -592,7 +591,7 @@ void qsc_rhx_cbc_encrypt(qsc_rhx_state* state, uint8_t* output, const uint8_t* i
 
 	oft = 0;
 
-	while (inputlen > QSC_RHX_BLOCK_SIZE)
+	while (inputlen > RHX_BLOCK_SIZE)
 	{
 		inp = _mm_loadu_si128((const __m128i*)(uint8_t*)(input + oft));
 		ivt = _mm_loadu_si128((const __m128i*)state->nonce);
@@ -603,25 +602,25 @@ void qsc_rhx_cbc_encrypt(qsc_rhx_state* state, uint8_t* output, const uint8_t* i
 		_mm_storeu_si128((__m128i*)state->nonce, otp);
 		_mm_storeu_si128((__m128i*)(output + oft), otp);
 
-		inputlen -= QSC_RHX_BLOCK_SIZE;
-		oft += QSC_RHX_BLOCK_SIZE;
+		inputlen -= RHX_BLOCK_SIZE;
+		oft += RHX_BLOCK_SIZE;
 	}
 
 	if (inputlen != 0)
 	{
-		uint8_t tmpb[QSC_RHX_BLOCK_SIZE] = { 0 };
-		qsc_memutils_copy(tmpb, (uint8_t*)(input + oft), inputlen);
+		uint8_t tmpb[RHX_BLOCK_SIZE] = { 0 };
+		utils_memory_copy(tmpb, (uint8_t*)(input + oft), inputlen);
 
-		if (inputlen < QSC_RHX_BLOCK_SIZE)
+		if (inputlen < RHX_BLOCK_SIZE)
 		{
-			qsc_pkcs7_add_padding(tmpb, QSC_RHX_BLOCK_SIZE - inputlen);
+			rhx_pkcs7_add_padding(tmpb, RHX_BLOCK_SIZE - inputlen);
 		}
 
-		qsc_rhx_cbc_encrypt_block(state, (uint8_t*)(output + oft), tmpb);
+		rhx_cbc_encrypt_block(state, (uint8_t*)(output + oft), tmpb);
 	}
 }
 
-void qsc_rhx_cbc_decrypt_block(qsc_rhx_state* state, uint8_t* output, const uint8_t* input)
+void rhx_cbc_decrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input)
 {
 	assert(state != NULL);
 	assert(input != NULL);
@@ -641,7 +640,7 @@ void qsc_rhx_cbc_decrypt_block(qsc_rhx_state* state, uint8_t* output, const uint
 	_mm_storeu_si128((__m128i*)output, otp);
 }
 
-void qsc_rhx_cbc_encrypt_block(qsc_rhx_state* state, uint8_t* output, const uint8_t* input)
+void rhx_cbc_encrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input)
 {
 	assert(state != NULL);
 	assert(input != NULL);
@@ -663,44 +662,7 @@ void qsc_rhx_cbc_encrypt_block(qsc_rhx_state* state, uint8_t* output, const uint
 
 /* ctr mode */
 
-static void encryption_test()
-{
-	uint8_t msg[AVX512_BLOCK_SIZE] = { 0 };
-	uint8_t ncel[AVX512_BLOCK_SIZE] = { 0 };
-	uint8_t ncea[QSC_RHX_BLOCK_SIZE] = { 0 };
-	uint8_t nces[QSC_RHX_BLOCK_SIZE] = { 0 };
-	uint8_t otpa[AVX512_BLOCK_SIZE] = { 0 };
-	uint8_t otpb[AVX512_BLOCK_SIZE] = { 0 };
-	__m128i inp;
-	__m128i nce;
-	__m128i otp;
-	__m512i ncew;
-	size_t i;
-	size_t oft;
-
-	oft = 0;
-
-	for (i = 0; i < 4; ++i)
-	{
-		nce = _mm_loadu_si128((const __m128i*)nces);
-		inp = _mm_loadu_si128((const __m128i*)(uint8_t*)(msg + oft));
-		// encrypt
-		_mm_storeu_si128((__m128i*)(uint8_t*)(otpa + oft), otp);
-		qsc_intutils_leincrement_x128(&nce);
-	}
-
-	/* load the ctr nonce block */
-	qsc_memutils_copy(ncel, ncea, QSC_RHX_BLOCK_SIZE);
-	qsc_intutils_le8increment(ncea, QSC_RHX_BLOCK_SIZE);
-	qsc_memutils_copy((uint8_t*)(ncel + 16), ncea, QSC_RHX_BLOCK_SIZE);
-	qsc_intutils_le8increment(ncea, QSC_RHX_BLOCK_SIZE);
-	qsc_memutils_copy((uint8_t*)(ncel + 32), ncea, QSC_RHX_BLOCK_SIZE);
-	qsc_intutils_le8increment(ncea, QSC_RHX_BLOCK_SIZE);
-	qsc_memutils_copy((uint8_t*)(ncel + 48), ncea, QSC_RHX_BLOCK_SIZE);
-	ncew = _mm512_loadu_si512((const __m512i*)ncel);
-}
-
-void qsc_rhx_ctrbe_transform(qsc_rhx_state* state, uint8_t* output, const uint8_t* input, size_t inputlen)
+void rhx_ctrbe_transform(rhx_state* state, uint8_t* output, const uint8_t* input, size_t inputlen)
 {
 	assert(state != NULL);
 	assert(input != NULL);
@@ -713,7 +675,7 @@ void qsc_rhx_ctrbe_transform(qsc_rhx_state* state, uint8_t* output, const uint8_
 
 	oft = 0;
 
-#if defined(QSC_SYSTEM_HAS_AVX512)
+#if defined(SYSTEM_HAS_AVX512)
 
 	if (inputlen >= AVX512_BLOCK_SIZE)
 	{
@@ -724,16 +686,16 @@ void qsc_rhx_ctrbe_transform(qsc_rhx_state* state, uint8_t* output, const uint8_
 		uint8_t nceb[AVX512_BLOCK_SIZE];
 
 		/* load the ctr nonce block */
-		qsc_memutils_copy(nceb, state->nonce, QSC_RHX_BLOCK_SIZE);
-		qsc_memutils_copy((uint8_t*)(nceb + 16), state->nonce, QSC_RHX_BLOCK_SIZE);
-		qsc_memutils_copy((uint8_t*)(nceb + 32), state->nonce, QSC_RHX_BLOCK_SIZE);
-		qsc_memutils_copy((uint8_t*)(nceb + 48), state->nonce, QSC_RHX_BLOCK_SIZE);
+		utils_memory_copy(nceb, state->nonce, RHX_BLOCK_SIZE);
+		utils_memory_copy((uint8_t*)(nceb + 16), state->nonce, RHX_BLOCK_SIZE);
+		utils_memory_copy((uint8_t*)(nceb + 32), state->nonce, RHX_BLOCK_SIZE);
+		utils_memory_copy((uint8_t*)(nceb + 48), state->nonce, RHX_BLOCK_SIZE);
 
 		ncew = _mm512_loadu_si512((const __m512i*)nceb);
 
-		qsc_intutils_reverse_bytes_x512(&ncew, &tmpn);
+		utils_integer_reverse_bytes_x512(&ncew, &tmpn);
 		tmpn = _mm512_add_epi64(tmpn, _mm512_set_epi64(0, 3, 0, 2, 0, 1, 0, 0));
-		qsc_intutils_reverse_bytes_x512(&tmpn, &ncew);
+		utils_integer_reverse_bytes_x512(&tmpn, &ncew);
 
 		while (inputlen >= AVX512_BLOCK_SIZE)
 		{
@@ -754,16 +716,16 @@ void qsc_rhx_ctrbe_transform(qsc_rhx_state* state, uint8_t* output, const uint8_
 
 		/* store the nonce */
 		_mm512_storeu_si512((__m512i*)nceb, ncew);
-		qsc_memutils_copy(state->nonce, nceb, QSC_RHX_BLOCK_SIZE);
+		utils_memory_copy(state->nonce, nceb, RHX_BLOCK_SIZE);
 	}
 
 #endif
 
-	if (inputlen >= QSC_RHX_BLOCK_SIZE)
+	if (inputlen >= RHX_BLOCK_SIZE)
 	{
 		nce = _mm_loadu_si128((const __m128i*)state->nonce);
 
-		while (inputlen >= QSC_RHX_BLOCK_SIZE)
+		while (inputlen >= RHX_BLOCK_SIZE)
 		{
 			rhx_encrypt_block(state, &otp, &nce);
 			inp = _mm_loadu_si128((const __m128i*)(uint8_t*)(input + oft));
@@ -771,8 +733,8 @@ void qsc_rhx_ctrbe_transform(qsc_rhx_state* state, uint8_t* output, const uint8_
 			_mm_storeu_si128((__m128i*)(uint8_t*)(output + oft), otp);
 			rhx_beincrement_x128(&nce);
 
-			inputlen -= QSC_RHX_BLOCK_SIZE;
-			oft += QSC_RHX_BLOCK_SIZE;
+			inputlen -= RHX_BLOCK_SIZE;
+			oft += RHX_BLOCK_SIZE;
 		}
 
 		_mm_storeu_si128((__m128i*)state->nonce, nce);
@@ -780,21 +742,21 @@ void qsc_rhx_ctrbe_transform(qsc_rhx_state* state, uint8_t* output, const uint8_
 
 	if (inputlen != 0)
 	{
-		uint8_t tmpb[QSC_RHX_BLOCK_SIZE] = { 0 };
+		uint8_t tmpb[RHX_BLOCK_SIZE] = { 0 };
 
 		nce = _mm_loadu_si128((const __m128i*)state->nonce);
-		qsc_intutils_be8increment(state->nonce, QSC_RHX_BLOCK_SIZE);
+		utils_integer_be8increment(state->nonce, RHX_BLOCK_SIZE);
 
 		rhx_encrypt_block(state, &otp, &nce);
 		inp = _mm_loadu_si128((const __m128i*)(uint8_t*)(input + oft));
 		otp = _mm_xor_si128(inp, otp);
 
 		_mm_storeu_si128((__m128i*)tmpb, otp);
-		qsc_memutils_copy((uint8_t*)(output + oft), tmpb, inputlen);
+		utils_memory_copy((uint8_t*)(output + oft), tmpb, inputlen);
 	}
 }
 
-void qsc_rhx_ctrle_transform(qsc_rhx_state* state, uint8_t* output, const uint8_t* input, size_t inputlen)
+void rhx_ctrle_transform(rhx_state* state, uint8_t* output, const uint8_t* input, size_t inputlen)
 {
 	assert(state != NULL);
 	assert(input != NULL);
@@ -807,7 +769,7 @@ void qsc_rhx_ctrle_transform(qsc_rhx_state* state, uint8_t* output, const uint8_
 
 	oft = 0;
 
-#if defined(QSC_SYSTEM_HAS_AVX512)
+#if defined(SYSTEM_HAS_AVX512)
 
 	if (inputlen >= AVX512_BLOCK_SIZE)
 	{
@@ -817,10 +779,10 @@ void qsc_rhx_ctrle_transform(qsc_rhx_state* state, uint8_t* output, const uint8_
 		uint8_t nceb[AVX512_BLOCK_SIZE];
 
 		/* load the ctr nonce block */
-		qsc_memutils_copy(nceb, state->nonce, QSC_RHX_BLOCK_SIZE);
-		qsc_memutils_copy((uint8_t*)(nceb + 16), state->nonce, QSC_RHX_BLOCK_SIZE);
-		qsc_memutils_copy((uint8_t*)(nceb + 32), state->nonce, QSC_RHX_BLOCK_SIZE);
-		qsc_memutils_copy((uint8_t*)(nceb + 48), state->nonce, QSC_RHX_BLOCK_SIZE);
+		utils_memory_copy(nceb, state->nonce, RHX_BLOCK_SIZE);
+		utils_memory_copy((uint8_t*)(nceb + 16), state->nonce, RHX_BLOCK_SIZE);
+		utils_memory_copy((uint8_t*)(nceb + 32), state->nonce, RHX_BLOCK_SIZE);
+		utils_memory_copy((uint8_t*)(nceb + 48), state->nonce, RHX_BLOCK_SIZE);
 
 		ncew = _mm512_loadu_si512((const __m512i*)nceb);
 		ncew = _mm512_add_epi64(ncew, _mm512_set_epi64(0, 3, 0, 2, 0, 1, 0, 0));
@@ -839,30 +801,30 @@ void qsc_rhx_ctrle_transform(qsc_rhx_state* state, uint8_t* output, const uint8_
 			oft += AVX512_BLOCK_SIZE;
 
 			/* increment the low 64 bits across 4 blocks */
-			qsc_intutils_leincrement_x512(&ncew);
+			utils_integer_leincrement_x512(&ncew);
 		}
 
 		/* store the nonce */
 		_mm512_storeu_si512((__m512i*)nceb, ncew);
-		qsc_memutils_copy(state->nonce, nceb, QSC_RHX_BLOCK_SIZE);
+		utils_memory_copy(state->nonce, nceb, RHX_BLOCK_SIZE);
 	}
 
 #endif
 
-	if (inputlen >= QSC_RHX_BLOCK_SIZE)
+	if (inputlen >= RHX_BLOCK_SIZE)
 	{
 		nce = _mm_loadu_si128((const __m128i*)state->nonce);
 
-		while (inputlen >= QSC_RHX_BLOCK_SIZE)
+		while (inputlen >= RHX_BLOCK_SIZE)
 		{
 			rhx_encrypt_block(state, &otp, &nce);
 			inp = _mm_loadu_si128((const __m128i*)(uint8_t*)(input + oft));
 			otp = _mm_xor_si128(inp, otp);
 			_mm_storeu_si128((__m128i*)(uint8_t*)(output + oft), otp);
-			qsc_intutils_leincrement_x128(&nce);
+			utils_integer_leincrement_x128(&nce);
 
-			inputlen -= QSC_RHX_BLOCK_SIZE;
-			oft += QSC_RHX_BLOCK_SIZE;
+			inputlen -= RHX_BLOCK_SIZE;
+			oft += RHX_BLOCK_SIZE;
 		}
 
 		_mm_storeu_si128((__m128i*)state->nonce, nce);
@@ -870,23 +832,23 @@ void qsc_rhx_ctrle_transform(qsc_rhx_state* state, uint8_t* output, const uint8_
 
 	if (inputlen != 0)
 	{
-		uint8_t tmpb[QSC_RHX_BLOCK_SIZE] = { 0 };
+		uint8_t tmpb[RHX_BLOCK_SIZE] = { 0 };
 
 		nce = _mm_loadu_si128((const __m128i*)state->nonce);
-		qsc_intutils_le8increment(state->nonce, QSC_RHX_BLOCK_SIZE);
+		utils_integer_le8increment(state->nonce, RHX_BLOCK_SIZE);
 
 		rhx_encrypt_block(state, &otp, &nce);
 		inp = _mm_loadu_si128((const __m128i*)(uint8_t*)(input + oft));
 		otp = _mm_xor_si128(inp, otp);
 
 		_mm_storeu_si128((__m128i*)tmpb, otp);
-		qsc_memutils_copy((uint8_t*)(output + oft), tmpb, inputlen);
+		utils_memory_copy((uint8_t*)(output + oft), tmpb, inputlen);
 	}
 }
 
 /* ecb mode */
 
-void qsc_rhx_ecb_decrypt_block(qsc_rhx_state* state, uint8_t* output, const uint8_t* input)
+void rhx_ecb_decrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input)
 {
 	assert(state != NULL);
 	assert(input != NULL);
@@ -900,7 +862,7 @@ void qsc_rhx_ecb_decrypt_block(qsc_rhx_state* state, uint8_t* output, const uint
 	_mm_storeu_si128((__m128i*)output, otp);
 }
 
-void qsc_rhx_ecb_encrypt_block(qsc_rhx_state* state, uint8_t* output, const uint8_t* input)
+void rhx_ecb_encrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input)
 {
 	assert(state != NULL);
 	assert(input != NULL);
@@ -914,7 +876,7 @@ void qsc_rhx_ecb_encrypt_block(qsc_rhx_state* state, uint8_t* output, const uint
 	_mm_storeu_si128((__m128i*)output, otp);
 }
 
-void qsc_rhx_dispose(qsc_rhx_state* state)
+void rhx_dispose(rhx_state* state)
 {
 	assert(state != NULL);
 
@@ -924,13 +886,13 @@ void qsc_rhx_dispose(qsc_rhx_state* state)
 	{
 		if (state->roundkeys != NULL)
 		{
-			qsc_memutils_clear((uint8_t*)state->roundkeys, sizeof(state->roundkeys));
+			utils_memory_clear((uint8_t*)state->roundkeys, sizeof(state->roundkeys));
 		}
 
-#if defined(QSC_SYSTEM_HAS_AVX512)
+#if defined(SYSTEM_HAS_AVX512)
 		if (state->roundkeysw != NULL)
 		{
-			qsc_memutils_clear((uint8_t*)state->roundkeysw, sizeof(state->roundkeysw));
+			utils_memory_clear((uint8_t*)state->roundkeysw, sizeof(state->roundkeysw));
 		}
 #endif
 		state->roundkeylen = 0;
@@ -994,7 +956,7 @@ static void rhx_add_roundkey(uint8_t* state, const uint32_t *skeys)
 	size_t i;
 	uint32_t k;
 
-	for (i = 0; i < QSC_RHX_BLOCK_SIZE; i += sizeof(uint32_t))
+	for (i = 0; i < RHX_BLOCK_SIZE; i += sizeof(uint32_t))
 	{
 		k = *skeys;
 		state[i] ^= (uint8_t)(k >> 24);
@@ -1026,7 +988,7 @@ static void rhx_invmix_columns(uint8_t* state)
 	uint32_t t2;
 	uint32_t t3;
 
-	for (i = 0; i < QSC_RHX_BLOCK_SIZE; i += sizeof(uint32_t))
+	for (i = 0; i < RHX_BLOCK_SIZE; i += sizeof(uint32_t))
 	{
 		s0 = state[i];
 		s1 = state[i + 1];
@@ -1080,7 +1042,7 @@ static void rhx_invsub_bytes(uint8_t* state)
 {
 	size_t i;
 
-	for (i = 0; i < QSC_RHX_BLOCK_SIZE; ++i)
+	for (i = 0; i < RHX_BLOCK_SIZE; ++i)
 	{
 		state[i] = is_box[state[i]];
 	}
@@ -1098,7 +1060,7 @@ static void rhx_mix_columns(uint8_t* state)
 	uint32_t t2;
 	uint32_t t3;
 
-	for (i = 0; i < QSC_RHX_BLOCK_SIZE; i += sizeof(uint32_t))
+	for (i = 0; i < RHX_BLOCK_SIZE; i += sizeof(uint32_t))
 	{
 		s0 = state[i + 0];
 		s1 = state[i + 1];
@@ -1145,7 +1107,7 @@ static void rhx_sub_bytes(uint8_t* state, const uint8_t* sbox)
 {
 	size_t i;
 
-	for (i = 0; i < QSC_RHX_BLOCK_SIZE; ++i)
+	for (i = 0; i < RHX_BLOCK_SIZE; ++i)
 	{
 		state[i] = sbox[state[i]];
 	}
@@ -1167,14 +1129,14 @@ static uint32_t rhx_substitution(uint32_t rot)
 	return res | ((uint32_t)(s_box[val]) << 24);
 }
 
-static void rhx_decrypt_block(qsc_rhx_state* state, uint8_t* output, const uint8_t* input)
+static void rhx_decrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input)
 {
 	const uint8_t* buf;
 	uint8_t s[16];
 	size_t i;
 
 	buf = input;
-	qsc_memutils_copy(s, buf, QSC_RHX_BLOCK_SIZE);
+	utils_memory_copy(s, buf, RHX_BLOCK_SIZE);
 	rhx_add_roundkey(s, (uint32_t*)(state->roundkeys + (state->rounds << 2)));
 
 	for (i = state->rounds - 1; i > 0; i--)
@@ -1188,15 +1150,15 @@ static void rhx_decrypt_block(qsc_rhx_state* state, uint8_t* output, const uint8
 	rhx_invshift_rows(s);
 	rhx_invsub_bytes(s);
 	rhx_add_roundkey(s, state->roundkeys);
-	qsc_memutils_copy(output, s, QSC_RHX_BLOCK_SIZE);
+	utils_memory_copy(output, s, RHX_BLOCK_SIZE);
 }
 
-static void rhx_encrypt_block(qsc_rhx_state* state, uint8_t* output, const uint8_t* input)
+static void rhx_encrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input)
 {
-	uint8_t buf[QSC_RHX_BLOCK_SIZE];
+	uint8_t buf[RHX_BLOCK_SIZE];
 	size_t i;
 
-	qsc_memutils_copy(buf, input, QSC_RHX_BLOCK_SIZE);
+	utils_memory_copy(buf, input, RHX_BLOCK_SIZE);
 	rhx_add_roundkey(buf, state->roundkeys);
 
 	for (i = 1; i < state->rounds; ++i)
@@ -1210,7 +1172,7 @@ static void rhx_encrypt_block(qsc_rhx_state* state, uint8_t* output, const uint8
 	rhx_sub_bytes(buf, s_box);
 	rhx_shift_rows(buf);
 	rhx_add_roundkey(buf, (uint32_t*)(state->roundkeys + (state->rounds << 2)));
-	qsc_memutils_copy(output, buf, QSC_RHX_BLOCK_SIZE);
+	utils_memory_copy(output, buf, RHX_BLOCK_SIZE);
 }
 
 static void rhx_expand_rot(uint32_t* key, uint32_t keyindex, uint32_t keyoffset, uint32_t rconindex)
@@ -1218,7 +1180,7 @@ static void rhx_expand_rot(uint32_t* key, uint32_t keyindex, uint32_t keyoffset,
 	uint32_t subkey;
 
 	subkey = keyindex - keyoffset;
-	key[keyindex] = key[subkey] ^ rhx_substitution((uint32_t)(key[keyindex - 1] << 8) | (uint32_t)(key[keyindex - 1] >> 24) & 0xFFU) ^ rcon[rconindex];
+	key[keyindex] = key[subkey] ^ rhx_substitution((uint32_t)(key[keyindex - 1] << 8) | ((uint32_t)(key[keyindex - 1] >> 24) & 0xFFU)) ^ rcon[rconindex];
 	++keyindex;
 	++subkey;
 	key[keyindex] = key[subkey] ^ key[keyindex - 1];
@@ -1270,31 +1232,31 @@ static void rhx_prefetch_sbox(bool encryption)
 	}
 }
 
-static void rhx_secure_expand(qsc_rhx_state* state, const qsc_rhx_keyparams* keyparams)
+static void rhx_secure_expand(rhx_state* state, const rhx_keyparams* keyparams)
 {
 	uint8_t tmpi[256] = { 0 };
 	uint16_t kblen;
 	size_t inlen;
 
 	/* add the ciphers string literal name */
-	if (keyparams->keylen == QSC_RHX256_KEY_SIZE)
+	if (keyparams->keylen == RHX_RHX256_KEY_SIZE)
 	{
-#if defined(QSC_RHX_SHAKE_EXTENSION)
+#if defined(RHX_SHAKE_EXTENSION)
 		/* RHXS256 */
-		qsc_memutils_copy(tmpi, RHX_CSHAKE256_INFO, sizeof(RHX_CSHAKE256_INFO));
+		utils_memory_copy(tmpi, RHX_CSHAKE256_INFO, sizeof(RHX_CSHAKE256_INFO));
 #else
 		/* RHXH256 */
-		qsc_memutils_copy(tmpi, RHX_HKDF256_INFO, sizeof(RHX_HKDF256_INFO));
+		utils_memory_copy(tmpi, RHX_HKDF256_INFO, sizeof(RHX_HKDF256_INFO));
 #endif
 	}
 	else
 	{
-#if defined(QSC_RHX_SHAKE_EXTENSION)
+#if defined(RHX_SHAKE_EXTENSION)
 		/* RHXS512 */
-		qsc_memutils_copy(tmpi, RHX_CSHAKE512_INFO, sizeof(RHX_CSHAKE512_INFO));
+		utils_memory_copy(tmpi, RHX_CSHAKE512_INFO, sizeof(RHX_CSHAKE512_INFO));
 #else
 		/* RHXH512 */
-		qsc_memutils_copy(tmpi, RHX_HKDF512_INFO, sizeof(RHX_HKDF512_INFO));
+		utils_memory_copy(tmpi, RHX_HKDF512_INFO, sizeof(RHX_HKDF512_INFO));
 #endif
 	}
 
@@ -1306,35 +1268,35 @@ static void rhx_secure_expand(qsc_rhx_state* state, const qsc_rhx_keyparams* key
 	/* copy in user supplied tweak to info array */
 	if (keyparams->infolen != 0)
 	{
-		inlen = qsc_intutils_min(keyparams->infolen, sizeof(tmpi) - RHX_INFO_DEFLEN);
-		qsc_memutils_copy(tmpi + RHX_INFO_DEFLEN, keyparams->info, inlen);
+		inlen = utils_integer_min(keyparams->infolen, sizeof(tmpi) - RHX_INFO_DEFLEN);
+		utils_memory_copy(tmpi + RHX_INFO_DEFLEN, keyparams->info, inlen);
 	}
 
 	/* seed the rng and generate the round key array */
-#if defined(QSC_RHX_SHAKE_EXTENSION)
-	if (keyparams->keylen == QSC_RHX256_KEY_SIZE)
+#if defined(RHX_SHAKE_EXTENSION)
+	if (keyparams->keylen == RHX_RHX256_KEY_SIZE)
 	{
 		/* info is used as cSHAKE name parameter */
-		qsc_cshake256_compute((uint8_t*)state->roundkeys, state->roundkeylen * sizeof(uint32_t), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen, NULL, 0);
+		cshake256_compute((uint8_t*)state->roundkeys, state->roundkeylen * sizeof(uint32_t), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen, NULL, 0);
 	}
 	else
 	{
-		qsc_cshake512_compute((uint8_t*)state->roundkeys, state->roundkeylen * sizeof(uint32_t), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen, NULL, 0);
+		cshake512_compute((uint8_t*)state->roundkeys, state->roundkeylen * sizeof(uint32_t), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen, NULL, 0);
 	}
 #else
-	if (keyparams->keylen == QSC_RHX256_KEY_SIZE)
+	if (keyparams->keylen == RHX_RHX256_KEY_SIZE)
 	{
 		/* info is HKDF Expand info parameter */
-		qsc_hkdf256_expand((uint8_t*)state->roundkeys, state->roundkeylen * sizeof(uint32_t), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen);
+		hkdf256_expand((uint8_t*)state->roundkeys, state->roundkeylen * sizeof(uint32_t), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen);
 	}
 	else
 	{
-		qsc_hkdf512_expand((uint8_t*)state->roundkeys, state->roundkeylen * sizeof(uint32_t), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen);
+		hkdf512_expand((uint8_t*)state->roundkeys, state->roundkeylen * sizeof(uint32_t), keyparams->key, keyparams->keylen, tmpi, RHX_INFO_DEFLEN + keyparams->infolen);
 	}
 #endif
 }
 
-static void rhx_standard_expand(qsc_rhx_state* state, const qsc_rhx_keyparams* keyparams)
+static void rhx_standard_expand(rhx_state* state, const rhx_keyparams* keyparams)
 {
 	/* key in 32 bit words */
 	size_t kwords;
@@ -1343,14 +1305,14 @@ static void rhx_standard_expand(qsc_rhx_state* state, const qsc_rhx_keyparams* k
 
 	if (kwords == 8)
 	{
-		state->roundkeys[0] = qsc_intutils_be8to32(keyparams->key);
-		state->roundkeys[1] = qsc_intutils_be8to32((uint8_t*)(keyparams->key + 4));
-		state->roundkeys[2] = qsc_intutils_be8to32((uint8_t*)(keyparams->key + 8));
-		state->roundkeys[3] = qsc_intutils_be8to32((uint8_t*)(keyparams->key + 12));
-		state->roundkeys[4] = qsc_intutils_be8to32((uint8_t*)(keyparams->key + 16));
-		state->roundkeys[5] = qsc_intutils_be8to32((uint8_t*)(keyparams->key + 20));
-		state->roundkeys[6] = qsc_intutils_be8to32((uint8_t*)(keyparams->key + 24));
-		state->roundkeys[7] = qsc_intutils_be8to32((uint8_t*)(keyparams->key + 28));
+		state->roundkeys[0] = utils_integer_be8to32(keyparams->key);
+		state->roundkeys[1] = utils_integer_be8to32((uint8_t*)(keyparams->key + 4));
+		state->roundkeys[2] = utils_integer_be8to32((uint8_t*)(keyparams->key + 8));
+		state->roundkeys[3] = utils_integer_be8to32((uint8_t*)(keyparams->key + 12));
+		state->roundkeys[4] = utils_integer_be8to32((uint8_t*)(keyparams->key + 16));
+		state->roundkeys[5] = utils_integer_be8to32((uint8_t*)(keyparams->key + 20));
+		state->roundkeys[6] = utils_integer_be8to32((uint8_t*)(keyparams->key + 24));
+		state->roundkeys[7] = utils_integer_be8to32((uint8_t*)(keyparams->key + 28));
 
 		/* k256 r: 8,16,24,32,40,48,56 s: 12,20,28,36,44,52 */
 		rhx_expand_rot(state->roundkeys, 8, 8, 1);
@@ -1369,10 +1331,10 @@ static void rhx_standard_expand(qsc_rhx_state* state, const qsc_rhx_keyparams* k
 	}
 	else
 	{
-		state->roundkeys[0] = qsc_intutils_be8to32(keyparams->key);
-		state->roundkeys[1] = qsc_intutils_be8to32((uint8_t*)(keyparams->key + 4));
-		state->roundkeys[2] = qsc_intutils_be8to32((uint8_t*)(keyparams->key + 8));
-		state->roundkeys[3] = qsc_intutils_be8to32((uint8_t*)(keyparams->key + 12));
+		state->roundkeys[0] = utils_integer_be8to32(keyparams->key);
+		state->roundkeys[1] = utils_integer_be8to32((uint8_t*)(keyparams->key + 4));
+		state->roundkeys[2] = utils_integer_be8to32((uint8_t*)(keyparams->key + 8));
+		state->roundkeys[3] = utils_integer_be8to32((uint8_t*)(keyparams->key + 12));
 
 		/* k128 r: 4,8,12,16,20,24,28,32,36,40 */
 		rhx_expand_rot(state->roundkeys, 4, 4, 1);
@@ -1388,7 +1350,7 @@ static void rhx_standard_expand(qsc_rhx_state* state, const qsc_rhx_keyparams* k
 	}
 }
 
-void qsc_rhx_initialize(qsc_rhx_state* state, const qsc_rhx_keyparams* keyparams, bool encryption, qsc_rhx_cipher_type ctype)
+void rhx_initialize(rhx_state* state, const rhx_keyparams* keyparams, bool encryption, rhx_cipher_type ctype)
 {
 	assert(state != NULL);
 	assert(keyparams != NULL);
@@ -1398,7 +1360,7 @@ void qsc_rhx_initialize(qsc_rhx_state* state, const qsc_rhx_keyparams* keyparams
 		state->nonce = keyparams->nonce;
 	}
 
-	qsc_memutils_clear((uint8_t*)state->roundkeys, sizeof(state->roundkeys));
+	utils_memory_clear((uint8_t*)state->roundkeys, sizeof(state->roundkeys));
 
 	if (ctype == RHX256)
 	{
@@ -1416,12 +1378,14 @@ void qsc_rhx_initialize(qsc_rhx_state* state, const qsc_rhx_keyparams* keyparams
 	{
 		state->roundkeylen = AES256_ROUNDKEY_SIZE;
 		state->rounds = 14;
+		rhx_prefetch_sbox(encryption);
 		rhx_standard_expand(state, keyparams);
 	}
 	else if (ctype == AES128)
 	{
 		state->roundkeylen = AES128_ROUNDKEY_SIZE;
 		state->rounds = 10;
+		rhx_prefetch_sbox(encryption);
 		rhx_standard_expand(state, keyparams);
 	}
 	else
@@ -1433,33 +1397,33 @@ void qsc_rhx_initialize(qsc_rhx_state* state, const qsc_rhx_keyparams* keyparams
 
 /* cbc mode */
 
-void qsc_rhx_cbc_decrypt(qsc_rhx_state* state, uint8_t* output, size_t *outputlen, const uint8_t* input, size_t inputlen)
+void rhx_cbc_decrypt(rhx_state* state, uint8_t* output, size_t *outputlen, const uint8_t* input, size_t inputlen)
 {
 	assert(state != NULL);
 	assert(input != NULL);
 	assert(output != NULL);
 
-	uint8_t tmpb[QSC_RHX_BLOCK_SIZE] = { 0 };
+	uint8_t tmpb[RHX_BLOCK_SIZE] = { 0 };
 	size_t nlen;
 	size_t oft;
 
 	nlen = 0;
 	oft = 0;
 
-	while (inputlen > QSC_RHX_BLOCK_SIZE)
+	while (inputlen > RHX_BLOCK_SIZE)
 	{
-		qsc_rhx_cbc_decrypt_block(state, (uint8_t*)(output + oft), (uint8_t*)(input + oft));
-		inputlen -= QSC_RHX_BLOCK_SIZE;
-		oft += QSC_RHX_BLOCK_SIZE;
+		rhx_cbc_decrypt_block(state, (uint8_t*)(output + oft), (uint8_t*)(input + oft));
+		inputlen -= RHX_BLOCK_SIZE;
+		oft += RHX_BLOCK_SIZE;
 	}
 
-	qsc_rhx_cbc_decrypt_block(state, tmpb, (uint8_t*)(input + oft));
-	nlen = qsc_pkcs7_padding_length(tmpb);
-	qsc_memutils_copy((uint8_t*)(output + oft), tmpb, QSC_RHX_BLOCK_SIZE - nlen);
-	*outputlen = oft + (QSC_RHX_BLOCK_SIZE - nlen);
+	rhx_cbc_decrypt_block(state, tmpb, (uint8_t*)(input + oft));
+	nlen = rhx_pkcs7_padding_length(tmpb);
+	utils_memory_copy((uint8_t*)(output + oft), tmpb, RHX_BLOCK_SIZE - nlen);
+	*outputlen = oft + (RHX_BLOCK_SIZE - nlen);
 }
 
-void qsc_rhx_cbc_encrypt(qsc_rhx_state* state, uint8_t* output, const uint8_t* input, size_t inputlen)
+void rhx_cbc_encrypt(rhx_state* state, uint8_t* output, const uint8_t* input, size_t inputlen)
 {
 	assert(state != NULL);
 	assert(input != NULL);
@@ -1469,48 +1433,48 @@ void qsc_rhx_cbc_encrypt(qsc_rhx_state* state, uint8_t* output, const uint8_t* i
 
 	oft = 0;
 
-	while (inputlen > QSC_RHX_BLOCK_SIZE)
+	while (inputlen > RHX_BLOCK_SIZE)
 	{
-		qsc_rhx_cbc_encrypt_block(state, (uint8_t*)(output + oft), (uint8_t*)(input + oft));
-		inputlen -= QSC_RHX_BLOCK_SIZE;
-		oft += QSC_RHX_BLOCK_SIZE;
+		rhx_cbc_encrypt_block(state, (uint8_t*)(output + oft), (uint8_t*)(input + oft));
+		inputlen -= RHX_BLOCK_SIZE;
+		oft += RHX_BLOCK_SIZE;
 	}
 
 	if (inputlen != 0)
 	{
-		uint8_t tmpb[QSC_RHX_BLOCK_SIZE] = { 0 };
-		qsc_memutils_copy(tmpb, (uint8_t*)(input + oft), inputlen);
+		uint8_t tmpb[RHX_BLOCK_SIZE] = { 0 };
+		utils_memory_copy(tmpb, (uint8_t*)(input + oft), inputlen);
 
-		if (inputlen < QSC_RHX_BLOCK_SIZE)
+		if (inputlen < RHX_BLOCK_SIZE)
 		{
-			qsc_pkcs7_add_padding(tmpb, QSC_RHX_BLOCK_SIZE - inputlen);
+			rhx_pkcs7_add_padding(tmpb, RHX_BLOCK_SIZE - inputlen);
 		}
 
-		qsc_rhx_cbc_encrypt_block(state, (uint8_t*)(output + oft), tmpb);
+		rhx_cbc_encrypt_block(state, (uint8_t*)(output + oft), tmpb);
 	}
 }
 
-void qsc_rhx_cbc_decrypt_block(qsc_rhx_state* state, uint8_t* output, const uint8_t* input)
+void rhx_cbc_decrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input)
 {
 	assert(state != NULL);
 	assert(input != NULL);
 	assert(output != NULL);
 
 	size_t i;
-	uint8_t tmpv[QSC_RHX_BLOCK_SIZE] = { 0 };
+	uint8_t tmpv[RHX_BLOCK_SIZE] = { 0 };
 
-	qsc_memutils_copy(tmpv, input, QSC_RHX_BLOCK_SIZE);
+	utils_memory_copy(tmpv, input, RHX_BLOCK_SIZE);
 	rhx_decrypt_block(state, output, input);
 
-	for (i = 0; i < QSC_RHX_BLOCK_SIZE; ++i)
+	for (i = 0; i < RHX_BLOCK_SIZE; ++i)
 	{
 		output[i] ^= state->nonce[i];
 	}
 
-	qsc_memutils_copy(state->nonce, tmpv, QSC_RHX_BLOCK_SIZE);
+	utils_memory_copy(state->nonce, tmpv, RHX_BLOCK_SIZE);
 }
 
-void qsc_rhx_cbc_encrypt_block(qsc_rhx_state* state, uint8_t* output, const uint8_t* input)
+void rhx_cbc_encrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input)
 {
 	assert(state != NULL);
 	assert(input != NULL);
@@ -1518,18 +1482,18 @@ void qsc_rhx_cbc_encrypt_block(qsc_rhx_state* state, uint8_t* output, const uint
 
 	size_t i;
 
-	for (i = 0; i < QSC_RHX_BLOCK_SIZE; ++i)
+	for (i = 0; i < RHX_BLOCK_SIZE; ++i)
 	{
 		state->nonce[i] ^= input[i];
 	}
 
 	rhx_encrypt_block(state, output, state->nonce);
-	qsc_memutils_copy(state->nonce, output, QSC_RHX_BLOCK_SIZE);
+	utils_memory_copy(state->nonce, output, RHX_BLOCK_SIZE);
 }
 
 /* ctr mode */
 
-void qsc_rhx_ctrbe_transform(qsc_rhx_state* state, uint8_t* output, const uint8_t* input, size_t inputlen)
+void rhx_ctrbe_transform(rhx_state* state, uint8_t* output, const uint8_t* input, size_t inputlen)
 {
 	assert(state != NULL);
 	assert(input != NULL);
@@ -1540,24 +1504,24 @@ void qsc_rhx_ctrbe_transform(qsc_rhx_state* state, uint8_t* output, const uint8_
 
 	oft = 0;
 
-	while (inputlen >= QSC_RHX_BLOCK_SIZE)
+	while (inputlen >= RHX_BLOCK_SIZE)
 	{
 		rhx_encrypt_block(state, (uint8_t*)(output + oft), state->nonce);
 
-		for (i = 0; i < QSC_RHX_BLOCK_SIZE; ++i)
+		for (i = 0; i < RHX_BLOCK_SIZE; ++i)
 		{
 			output[oft + i] ^= input[oft + i];
 		}
 
-		qsc_intutils_be8increment(state->nonce, QSC_RHX_BLOCK_SIZE);
+		utils_integer_be8increment(state->nonce, RHX_BLOCK_SIZE);
 
-		inputlen -= QSC_RHX_BLOCK_SIZE;
-		oft += QSC_RHX_BLOCK_SIZE;
+		inputlen -= RHX_BLOCK_SIZE;
+		oft += RHX_BLOCK_SIZE;
 	}
 
 	if (inputlen != 0)
 	{
-		uint8_t tmpb[QSC_RHX_BLOCK_SIZE] = { 0 };
+		uint8_t tmpb[RHX_BLOCK_SIZE] = { 0 };
 
 		rhx_encrypt_block(state, tmpb, state->nonce);
 
@@ -1566,11 +1530,11 @@ void qsc_rhx_ctrbe_transform(qsc_rhx_state* state, uint8_t* output, const uint8_
 			output[oft + i] = tmpb[i] ^ input[oft + i];
 		}
 
-		qsc_intutils_be8increment(state->nonce, QSC_RHX_BLOCK_SIZE);
+		utils_integer_be8increment(state->nonce, RHX_BLOCK_SIZE);
 	}
 }
 
-void qsc_rhx_ctrle_transform(qsc_rhx_state* state, uint8_t* output, const uint8_t* input, size_t inputlen)
+void rhx_ctrle_transform(rhx_state* state, uint8_t* output, const uint8_t* input, size_t inputlen)
 {
 	assert(state != NULL);
 	assert(input != NULL);
@@ -1581,24 +1545,24 @@ void qsc_rhx_ctrle_transform(qsc_rhx_state* state, uint8_t* output, const uint8_
 
 	oft = 0;
 
-	while (inputlen >= QSC_RHX_BLOCK_SIZE)
+	while (inputlen >= RHX_BLOCK_SIZE)
 	{
 		rhx_encrypt_block(state, (uint8_t*)(output + oft), state->nonce);
 
-		for (i = 0; i < QSC_RHX_BLOCK_SIZE; ++i)
+		for (i = 0; i < RHX_BLOCK_SIZE; ++i)
 		{
 			output[oft + i] ^= input[oft + i];
 		}
 
-		qsc_intutils_le8increment(state->nonce, QSC_RHX_BLOCK_SIZE);
+		utils_integer_le8increment(state->nonce, RHX_BLOCK_SIZE);
 
-		inputlen -= QSC_RHX_BLOCK_SIZE;
-		oft += QSC_RHX_BLOCK_SIZE;
+		inputlen -= RHX_BLOCK_SIZE;
+		oft += RHX_BLOCK_SIZE;
 	}
 
 	if (inputlen != 0)
 	{
-		uint8_t tmpb[QSC_RHX_BLOCK_SIZE] = { 0 };
+		uint8_t tmpb[RHX_BLOCK_SIZE] = { 0 };
 
 		rhx_encrypt_block(state, tmpb, state->nonce);
 
@@ -1607,13 +1571,13 @@ void qsc_rhx_ctrle_transform(qsc_rhx_state* state, uint8_t* output, const uint8_
 			output[oft + i] = tmpb[i] ^ input[oft + i];
 		}
 
-		qsc_intutils_le8increment(state->nonce, QSC_RHX_BLOCK_SIZE);
+		utils_integer_le8increment(state->nonce, RHX_BLOCK_SIZE);
 	}
 }
 
 /* ecb mode */
 
-void qsc_rhx_ecb_decrypt_block(qsc_rhx_state* state, uint8_t* output, const uint8_t* input)
+void rhx_ecb_decrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input)
 {
 	assert(state != NULL);
 	assert(input != NULL);
@@ -1622,7 +1586,7 @@ void qsc_rhx_ecb_decrypt_block(qsc_rhx_state* state, uint8_t* output, const uint
 	rhx_decrypt_block(state, output, input);
 }
 
-void qsc_rhx_ecb_encrypt_block(qsc_rhx_state* state, uint8_t* output, const uint8_t* input)
+void rhx_ecb_encrypt_block(rhx_state* state, uint8_t* output, const uint8_t* input)
 {
 	assert(state != NULL);
 	assert(input != NULL);
@@ -1631,7 +1595,7 @@ void qsc_rhx_ecb_encrypt_block(qsc_rhx_state* state, uint8_t* output, const uint
 	rhx_encrypt_block(state, output, input);
 }
 
-void qsc_rhx_dispose(qsc_rhx_state* state)
+void rhx_dispose(rhx_state* state)
 {
 	assert(state != NULL);
 
@@ -1641,7 +1605,7 @@ void qsc_rhx_dispose(qsc_rhx_state* state)
 	{
 		if (state->roundkeys != NULL)
 		{
-			qsc_memutils_clear((uint8_t*)state->roundkeys, sizeof(state->roundkeys));
+			utils_memory_clear((uint8_t*)state->roundkeys, sizeof(state->roundkeys));
 		}
 
 		state->roundkeylen = 0;
@@ -1652,25 +1616,25 @@ void qsc_rhx_dispose(qsc_rhx_state* state)
 
 /* pkcs7 padding */
 
-void qsc_pkcs7_add_padding(uint8_t* input, size_t length)
+void rhx_pkcs7_add_padding(uint8_t* input, size_t length)
 {
 	assert(input != NULL);
 
-	const size_t PADOFT = QSC_RHX_BLOCK_SIZE - length;
+	const size_t PADOFT = RHX_BLOCK_SIZE - length;
 	uint8_t code;
 	uint8_t cond;
 	size_t i;
 
 	code = (uint8_t)length;
 
-	for (i = 0; i < QSC_RHX_BLOCK_SIZE; ++i)
+	for (i = 0; i < RHX_BLOCK_SIZE; ++i)
 	{
 		cond = i >= PADOFT ? 0xFF : 0x00;
 		input[i] ^= cond & code;
 	}
 }
 
-size_t qsc_pkcs7_padding_length(const uint8_t* input)
+size_t rhx_pkcs7_padding_length(const uint8_t* input)
 {
 	assert(input != NULL);
 
@@ -1678,13 +1642,13 @@ size_t qsc_pkcs7_padding_length(const uint8_t* input)
 	int32_t i;
 	size_t len;
 
-	code = input[QSC_RHX_BLOCK_SIZE - 1];
-	code = (code < QSC_RHX_BLOCK_SIZE) ? code : 0;
+	code = input[RHX_BLOCK_SIZE - 1];
+	code = (code < RHX_BLOCK_SIZE) ? code : 0;
 	len = (size_t)code;
 
-	for (i = 2; i < QSC_RHX_BLOCK_SIZE; ++i)
+	for (i = 2; i < RHX_BLOCK_SIZE; ++i)
 	{
-		if (input[QSC_RHX_BLOCK_SIZE - i] != code && i <= (size_t)code)
+		if (input[RHX_BLOCK_SIZE - i] != code && i <= (size_t)code)
 		{
 			len = 0;
 		}
@@ -1697,7 +1661,7 @@ size_t qsc_pkcs7_padding_length(const uint8_t* input)
 
 /* rhx-hba256 */
 
-#if defined(QSC_HBA_KMAC_AUTH)
+#if defined(RHX_HBA_KMAC_AUTH)
 static const uint8_t rhx_hba256_name[HBA_NAME_LENGTH] =
 {
 	0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x48, 0x42, 0x41, 0x2D, 0x52, 0x48,
@@ -1711,16 +1675,16 @@ static const uint8_t rhx_hba256_name[HBA_NAME_LENGTH] =
 };
 #endif
 
-static void rhx_hba256_update(qsc_rhx_hba256_state* state, const uint8_t* input, size_t inputlen)
+static void rhx_hba256_update(rhx_hba256_state* state, const uint8_t* input, size_t inputlen)
 {
-#if defined(QSC_RHX_SHAKE_EXTENSION)
-	qsc_kmac_update(&state->kstate, QSC_KECCAK_256_RATE, input, inputlen);
+#if defined(RHX_SHAKE_EXTENSION)
+	kmac_update(&state->kstate, KECCAK_256_RATE, input, inputlen);
 #else
-	qsc_hmac256_update(&state->kstate, input, inputlen);
+	hmac256_update(&state->kstate, input, inputlen);
 #endif
 }
 
-static void rhx_hba256_finalize(qsc_rhx_hba256_state* state, uint8_t* output)
+static void rhx_hba256_finalize(rhx_hba256_state* state, uint8_t* output)
 {
 	uint8_t mkey[HBA256_MKEY_LENGTH] = { 0 };
 	uint8_t pctr[sizeof(uint64_t)] = { 0 };
@@ -1728,105 +1692,105 @@ static void rhx_hba256_finalize(qsc_rhx_hba256_state* state, uint8_t* output)
 	uint64_t mctr;
 
 	/* version 1.1a add the nonce, ciphertext, and encoding sizes to the counter */
-	mctr = QSC_RHX_BLOCK_SIZE + state->counter + sizeof(uint64_t);
+	mctr = RHX_BLOCK_SIZE + state->counter + sizeof(uint64_t);
 	/* convert to little endian bytes  */
-	qsc_intutils_le64to8(pctr, mctr);
+	utils_integer_le64to8(pctr, mctr);
 	/* encode with message size, counter, and terminating string sizes */
 	rhx_hba256_update(state, pctr, sizeof(pctr));
 
-#if defined(QSC_HBA_KMAC_AUTH)
+#if defined(RHX_HBA_KMAC_AUTH)
 	/* mac the data and add the code to the end of the cipher-text output array */
-	qsc_kmac_finalize(&state->kstate, QSC_KECCAK_256_RATE, output, QSC_HBA256_MAC_LENGTH);
+	kmac_finalize(&state->kstate, KECCAK_256_RATE, output, RHX_HBA256_MAC_LENGTH);
 #else
 	/* mac the data and add the code to the end of the cipher-text output array */
-	qsc_hmac256_finalize(&state->kstate, output);
+	hmac256_finalize(&state->kstate, output);
 #endif
 
 	/* generate the new mac key */
-	qsc_memutils_copy(tmpn, rhx_hba256_name, HBA_NAME_LENGTH);
+	utils_memory_copy(tmpn, rhx_hba256_name, HBA_NAME_LENGTH);
 	/* add 1 + the nonce, and last input size */
 	/* append the counter to the end of the mac input array */
-	qsc_intutils_le64to8(tmpn, state->counter);
+	utils_integer_le64to8(tmpn, state->counter);
 
-#if defined(QSC_HBA_KMAC_AUTH)
-	qsc_cshake256_compute(mkey, HBA256_MKEY_LENGTH, state->mkey, sizeof(state->mkey), tmpn, HBA_NAME_LENGTH, state->cust, state->custlen);
-	qsc_memutils_copy(state->mkey, mkey, HBA256_MKEY_LENGTH);
-	qsc_kmac_initialize(&state->kstate, QSC_KECCAK_256_RATE, state->mkey, HBA256_MKEY_LENGTH, NULL, 0);
+#if defined(RHX_HBA_KMAC_AUTH)
+	cshake256_compute(mkey, HBA256_MKEY_LENGTH, state->mkey, sizeof(state->mkey), tmpn, HBA_NAME_LENGTH, state->cust, state->custlen);
+	utils_memory_copy(state->mkey, mkey, HBA256_MKEY_LENGTH);
+	kmac_initialize(&state->kstate, KECCAK_256_RATE, state->mkey, HBA256_MKEY_LENGTH, NULL, 0);
 #else
 	/* extract the HKDF key from the state mac-key and salt */
-	qsc_hkdf256_extract(mkey, HBA256_MKEY_LENGTH, state->mkey, sizeof(state->mkey), tmpn, HBA_NAME_LENGTH);
+	hkdf256_extract(mkey, HBA256_MKEY_LENGTH, state->mkey, sizeof(state->mkey), tmpn, HBA_NAME_LENGTH);
 	/* key HKDF Expand and generate the next mac-key to state */
-	qsc_hkdf256_expand(state->mkey, sizeof(state->mkey), mkey, HBA256_MKEY_LENGTH, state->cust, state->custlen);
+	hkdf256_expand(state->mkey, sizeof(state->mkey), mkey, HBA256_MKEY_LENGTH, state->cust, state->custlen);
 #endif
 }
 
-static void rhx_hba256_genkeys(const qsc_rhx_keyparams* keyparams, uint8_t* cprk, uint8_t* mack)
+static void rhx_hba256_genkeys(const rhx_keyparams* keyparams, uint8_t* cprk, uint8_t* mack)
 {
-#if defined(QSC_RHX_SHAKE_EXTENSION)
+#if defined(RHX_SHAKE_EXTENSION)
 
-	qsc_keccak_state kstate;
-	uint8_t sbuf[QSC_KECCAK_256_RATE] = { 0 };
+	keccak_state kstate;
+	uint8_t sbuf[KECCAK_256_RATE] = { 0 };
 
-	qsc_intutils_clear64(kstate.state, QSC_KECCAK_STATE_SIZE);
+	utils_memory_clear(kstate.state, KECCAK_STATE_SIZE * sizeof(uint64_t));
 
 	/* initialize an instance of cSHAKE */
-	qsc_cshake_initialize(&kstate, QSC_KECCAK_256_RATE, keyparams->key, keyparams->keylen, rhx_hba256_name, HBA_NAME_LENGTH, keyparams->info, keyparams->infolen);
+	cshake_initialize(&kstate, KECCAK_256_RATE, keyparams->key, keyparams->keylen, rhx_hba256_name, HBA_NAME_LENGTH, keyparams->info, keyparams->infolen);
 
 	/* use two permutation calls to seperate the cipher/mac key outputs to match the CEX implementation */
-	qsc_cshake_squeezeblocks(&kstate, QSC_KECCAK_256_RATE, sbuf, 1);
-	qsc_memutils_copy(cprk, sbuf, keyparams->keylen);
-	qsc_cshake_squeezeblocks(&kstate, QSC_KECCAK_256_RATE, sbuf, 1);
-	qsc_memutils_copy(mack, sbuf, HBA256_MKEY_LENGTH);
+	cshake_squeezeblocks(&kstate, KECCAK_256_RATE, sbuf, 1);
+	utils_memory_copy(cprk, sbuf, keyparams->keylen);
+	cshake_squeezeblocks(&kstate, KECCAK_256_RATE, sbuf, 1);
+	utils_memory_copy(mack, sbuf, HBA256_MKEY_LENGTH);
 	/* clear the shake buffer */
-	qsc_intutils_clear64(kstate.state, QSC_KECCAK_STATE_SIZE);
+	utils_memory_clear(kstate.state, KECCAK_STATE_SIZE * sizeof(uint64_t));
 
 #else
 
-	uint8_t kbuf[QSC_RHX256_KEY_SIZE + HBA256_MKEY_LENGTH] = { 0 };
-	uint8_t genk[QSC_HMAC_256_MAC_SIZE] = { 0 };
+	uint8_t kbuf[RHX_RHX256_KEY_SIZE + HBA256_MKEY_LENGTH] = { 0 };
+	uint8_t genk[HMAC_256_MAC_SIZE] = { 0 };
 
 	/* extract the HKDF key from the user-key and salt */
-	qsc_hkdf256_extract(genk, sizeof(genk), keyparams->key, keyparams->keylen, rhx_hba256_name, HBA_NAME_LENGTH);
+	hkdf256_extract(genk, sizeof(genk), keyparams->key, keyparams->keylen, rhx_hba256_name, HBA_NAME_LENGTH);
 
 	/* key HKDF Expand and generate the key buffer */
-	qsc_hkdf256_expand(kbuf, sizeof(kbuf), genk, sizeof(genk), keyparams->info, keyparams->infolen);
+	hkdf256_expand(kbuf, sizeof(kbuf), genk, sizeof(genk), keyparams->info, keyparams->infolen);
 
 	/* copy the cipher and mac keys from the buffer */
-	qsc_memutils_copy(cprk, kbuf, QSC_RHX256_KEY_SIZE);
-	qsc_memutils_copy(mack, kbuf + QSC_RHX256_KEY_SIZE, HBA256_MKEY_LENGTH);
+	utils_memory_copy(cprk, kbuf, RHX_RHX256_KEY_SIZE);
+	utils_memory_copy(mack, kbuf + RHX_RHX256_KEY_SIZE, HBA256_MKEY_LENGTH);
 
 	/* clear the buffer */
-	qsc_memutils_clear(kbuf, sizeof(kbuf));
+	utils_memory_clear(kbuf, sizeof(kbuf));
 
 #endif
 }
 
-void qsc_rhx_hba256_dispose(qsc_rhx_hba256_state* state)
+void rhx_hba256_dispose(rhx_hba256_state* state)
 {
 	if (state != NULL)
 	{
 		if (&state->kstate != NULL)
 		{
-#if defined(QSC_RHX_SHAKE_EXTENSION)
-			qsc_keccak_dispose(&state->kstate);
+#if defined(RHX_SHAKE_EXTENSION)
+			keccak_dispose(&state->kstate);
 #else
-			qsc_hmac256_dispose(&state->kstate);
+			hmac256_dispose(&state->kstate);
 #endif
 		}
 
 		if (&state->cstate != NULL)
 		{
-			qsc_rhx_dispose(&state->cstate);
+			rhx_dispose(&state->cstate);
 		}
 
 		if (state->cust != NULL)
 		{
-			qsc_memutils_clear(state->cust, sizeof(state->cust));
+			utils_memory_clear(state->cust, sizeof(state->cust));
 		}
 
 		if (state->mkey != NULL)
 		{
-			qsc_memutils_clear(state->mkey, sizeof(state->mkey));
+			utils_memory_clear(state->mkey, sizeof(state->mkey));
 		}
 
 		state->counter = 0;
@@ -1835,34 +1799,34 @@ void qsc_rhx_hba256_dispose(qsc_rhx_hba256_state* state)
 	}
 }
 
-void qsc_rhx_hba256_initialize(qsc_rhx_hba256_state* state, const qsc_rhx_keyparams* keyparams, bool encrypt)
+void rhx_hba256_initialize(rhx_hba256_state* state, const rhx_keyparams* keyparams, bool encrypt)
 {
-	uint8_t cprk[QSC_RHX256_KEY_SIZE] = { 0 };
+	uint8_t cprk[RHX_RHX256_KEY_SIZE] = { 0 };
 
-	state->custlen = qsc_intutils_min(keyparams->infolen, sizeof(state->cust));
+	state->custlen = utils_integer_min(keyparams->infolen, sizeof(state->cust));
 
 	if (state->custlen != 0)
 	{
-		qsc_memutils_clear(state->cust, sizeof(state->cust));
-		qsc_memutils_copy(state->cust, keyparams->info, state->custlen);
+		utils_memory_clear(state->cust, sizeof(state->cust));
+		utils_memory_copy(state->cust, keyparams->info, state->custlen);
 	}
 
-	qsc_intutils_clear8(state->mkey, sizeof(state->mkey));
+	utils_memory_clear(state->mkey, sizeof(state->mkey));
 
 	/* generate the cipher and mac keys */
 	rhx_hba256_genkeys(keyparams, cprk, state->mkey);
 
 	/* initialize the mac state */
-#if defined(QSC_RHX_SHAKE_EXTENSION)
-	qsc_kmac_initialize(&state->kstate, QSC_KECCAK_256_RATE, state->mkey, HBA256_MKEY_LENGTH, NULL, 0);
+#if defined(RHX_SHAKE_EXTENSION)
+	kmac_initialize(&state->kstate, KECCAK_256_RATE, state->mkey, HBA256_MKEY_LENGTH, NULL, 0);
 #else
-	qsc_hmac256_initialize(&state->kstate, state->mkey, HBA256_MKEY_LENGTH);
+	hmac256_initialize(&state->kstate, state->mkey, HBA256_MKEY_LENGTH);
 #endif
 
 	/* initialize the key parameters struct, info is optional */
-	qsc_rhx_keyparams kp = { cprk, QSC_RHX256_KEY_SIZE, keyparams->nonce, keyparams->info, keyparams->infolen };
+	rhx_keyparams kp = { cprk, RHX_RHX256_KEY_SIZE, keyparams->nonce, keyparams->info, keyparams->infolen };
 	/* initialize the cipher state */
-	qsc_rhx_initialize(&state->cstate, &kp, true, RHX256);
+	rhx_initialize(&state->cstate, &kp, true, RHX256);
 
 	/* populate the hba state structure with mac-key and counter */
 	/* the state counter always initializes at 1 */
@@ -1870,7 +1834,7 @@ void qsc_rhx_hba256_initialize(qsc_rhx_hba256_state* state, const qsc_rhx_keypar
 	state->encrypt = encrypt;
 }
 
-void qsc_rhx_hba256_set_associated(qsc_rhx_hba256_state* state, const uint8_t* data, size_t datalen)
+void rhx_hba256_set_associated(rhx_hba256_state* state, const uint8_t* data, size_t datalen)
 {
 	assert(state != NULL);
 	assert(data != NULL);
@@ -1883,12 +1847,12 @@ void qsc_rhx_hba256_set_associated(qsc_rhx_hba256_state* state, const uint8_t* d
 		/* add the additional data to the mac */
 		rhx_hba256_update(state, data, datalen);
 		/* 1.1a encode with the ad size */
-		qsc_intutils_le32to8(actr, (uint32_t)datalen);
+		utils_integer_le32to8(actr, (uint32_t)datalen);
 		rhx_hba256_update(state, actr, sizeof(actr));
 	}
 }
 
-bool qsc_rhx_hba256_transform(qsc_rhx_hba256_state* state, uint8_t* output, const uint8_t* input, size_t inputlen)
+bool rhx_hba256_transform(rhx_hba256_state* state, uint8_t* output, const uint8_t* input, size_t inputlen)
 {
 	bool res;
 
@@ -1900,9 +1864,9 @@ bool qsc_rhx_hba256_transform(qsc_rhx_hba256_state* state, uint8_t* output, cons
 	if (state->encrypt)
 	{
 		/* update the mac with the nonce */
-		rhx_hba256_update(state, state->cstate.nonce, QSC_RHX_BLOCK_SIZE);
+		rhx_hba256_update(state, state->cstate.nonce, RHX_BLOCK_SIZE);
 		/* use rhx counter-mode to encrypt the array */
-		qsc_rhx_ctrle_transform(&state->cstate, output, input, inputlen);
+		rhx_ctrle_transform(&state->cstate, output, input, inputlen);
 		/* update the mac with the cipher-text */
 		rhx_hba256_update(state, output, inputlen);
 		/* mac the cipher-text appending the code to the end of the array */
@@ -1911,20 +1875,20 @@ bool qsc_rhx_hba256_transform(qsc_rhx_hba256_state* state, uint8_t* output, cons
 	}
 	else
 	{
-		uint8_t code[QSC_HBA256_MAC_LENGTH] = { 0 };
+		uint8_t code[RHX_HBA256_MAC_LENGTH] = { 0 };
 
 		/* update the mac with the nonce */
-		rhx_hba256_update(state, state->cstate.nonce, QSC_RHX_BLOCK_SIZE);
+		rhx_hba256_update(state, state->cstate.nonce, RHX_BLOCK_SIZE);
 		/* update the mac with the cipher-text */
 		rhx_hba256_update(state, input, inputlen);
 		/* mac the cipher-text to the mac */
 		rhx_hba256_finalize(state, code);
 
 		/* test the mac for equality, bypassing the transform if the mac check fails */
-		if (qsc_intutils_verify(code, (uint8_t*)(input + inputlen), QSC_HBA256_MAC_LENGTH) == 0)
+		if (utils_integer_verify(code, (uint8_t*)(input + inputlen), RHX_HBA256_MAC_LENGTH) == 0)
 		{
 			/* use rhx counter-mode to decrypt the array */
-			qsc_rhx_ctrle_transform(&state->cstate, output, input, inputlen);
+			rhx_ctrle_transform(&state->cstate, output, input, inputlen);
 			res = true;
 		}
 	}
@@ -1934,7 +1898,7 @@ bool qsc_rhx_hba256_transform(qsc_rhx_hba256_state* state, uint8_t* output, cons
 
 /* rhx-hba512 */
 
-#if defined(QSC_HBA_KMAC_AUTH)
+#if defined(RHX_HBA_KMAC_AUTH)
 static const uint8_t rhx_hba512_name[HBA_NAME_LENGTH] =
 {
 	0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x48, 0x42, 0x41, 0x2D, 0x52, 0x48,
@@ -1948,16 +1912,16 @@ static const uint8_t rhx_hba512_name[HBA_NAME_LENGTH] =
 };
 #endif
 
-static void rhx_hba512_update(qsc_rhx_hba512_state* state, const uint8_t* input, size_t inputlen)
+static void rhx_hba512_update(rhx_hba512_state* state, const uint8_t* input, size_t inputlen)
 {
-#if defined(QSC_RHX_SHAKE_EXTENSION)
-	qsc_kmac_update(&state->kstate, QSC_KECCAK_512_RATE, input, inputlen);
+#if defined(RHX_SHAKE_EXTENSION)
+	kmac_update(&state->kstate, KECCAK_512_RATE, input, inputlen);
 #else
-	qsc_hmac512_update(&state->kstate, input, inputlen);
+	hmac512_update(&state->kstate, input, inputlen);
 #endif
 }
 
-static void rhx_hba512_finalize(qsc_rhx_hba512_state* state, uint8_t* output)
+static void rhx_hba512_finalize(rhx_hba512_state* state, uint8_t* output)
 {
 	uint8_t mkey[HBA512_MKEY_LENGTH] = { 0 };
 	uint8_t pctr[sizeof(uint64_t)] = { 0 };
@@ -1965,106 +1929,106 @@ static void rhx_hba512_finalize(qsc_rhx_hba512_state* state, uint8_t* output)
 	uint64_t mctr;
 
 	/* version 1.1a add the nonce, ciphertext, and encoding sizes to the counter */
-	mctr = QSC_RHX_BLOCK_SIZE + state->counter + sizeof(pctr);
+	mctr = RHX_BLOCK_SIZE + state->counter + sizeof(pctr);
 	/* convert to little endian bytes  */
-	qsc_intutils_le64to8(pctr, mctr);
+	utils_integer_le64to8(pctr, mctr);
 	/* encode with cipher-text size, counter, and terminating string lengths */
 	rhx_hba512_update(state, pctr, sizeof(pctr));
 
-#if defined(QSC_HBA_KMAC_AUTH)
+#if defined(RHX_HBA_KMAC_AUTH)
 	/* mac the data and add the code to the end of the cipher-text output array */
-	qsc_kmac_finalize(&state->kstate, QSC_KECCAK_512_RATE, output, QSC_HBA512_MAC_LENGTH);
+	kmac_finalize(&state->kstate, KECCAK_512_RATE, output, RHX_HBA512_MAC_LENGTH);
 #else
 	/* mac the data and add the code to the end of the cipher-text output array */
-	qsc_hmac512_finalize(&state->kstate, output);
+	hmac512_finalize(&state->kstate, output);
 #endif
 
 	/* generate the new mac key */
-	qsc_memutils_copy(tmpn, rhx_hba512_name, HBA_NAME_LENGTH);
+	utils_memory_copy(tmpn, rhx_hba512_name, HBA_NAME_LENGTH);
 	/* add 1 + the nonce, and last input size */
 	/* append the counter to the end of the mac input array */
-	qsc_intutils_le64to8(tmpn, state->counter);
+	utils_integer_le64to8(tmpn, state->counter);
 
-#if defined(QSC_HBA_KMAC_AUTH)
-	qsc_cshake512_compute(mkey, HBA512_MKEY_LENGTH, state->mkey, sizeof(state->mkey), tmpn, HBA_NAME_LENGTH, state->cust, state->custlen);
-	qsc_memutils_copy(state->mkey, mkey, HBA512_MKEY_LENGTH);
-	qsc_kmac_initialize(&state->kstate, QSC_KECCAK_512_RATE, state->mkey, HBA512_MKEY_LENGTH, NULL, 0);
+#if defined(RHX_HBA_KMAC_AUTH)
+	cshake512_compute(mkey, HBA512_MKEY_LENGTH, state->mkey, sizeof(state->mkey), tmpn, HBA_NAME_LENGTH, state->cust, state->custlen);
+	utils_memory_copy(state->mkey, mkey, HBA512_MKEY_LENGTH);
+	kmac_initialize(&state->kstate, KECCAK_512_RATE, state->mkey, HBA512_MKEY_LENGTH, NULL, 0);
 #else
 	/* extract the HKDF key from the state mac-key and salt */
-	qsc_hkdf512_extract(mkey, HBA512_MKEY_LENGTH, state->mkey, sizeof(state->mkey), tmpn, HBA_NAME_LENGTH);
+	hkdf512_extract(mkey, HBA512_MKEY_LENGTH, state->mkey, sizeof(state->mkey), tmpn, HBA_NAME_LENGTH);
 	/* key HKDF Expand and generate the next mac-key to state */
-	qsc_hkdf512_expand(state->mkey, sizeof(state->mkey), mkey, HBA512_MKEY_LENGTH, state->cust, state->custlen);
+	hkdf512_expand(state->mkey, sizeof(state->mkey), mkey, HBA512_MKEY_LENGTH, state->cust, state->custlen);
 #endif
 }
 
-static void rhx_hba512_genkeys(const qsc_rhx_keyparams* keyparams, uint8_t* cprk, uint8_t* mack)
+static void rhx_hba512_genkeys(const rhx_keyparams* keyparams, uint8_t* cprk, uint8_t* mack)
 {
-#if defined(QSC_RHX_SHAKE_EXTENSION)
+#if defined(RHX_SHAKE_EXTENSION)
 
-	uint8_t sbuf[QSC_KECCAK_512_RATE] = { 0 };
-	qsc_keccak_state kstate;
+	uint8_t sbuf[KECCAK_512_RATE] = { 0 };
+	keccak_state kstate;
 
-	qsc_intutils_clear64(kstate.state, QSC_KECCAK_STATE_SIZE);
+	utils_memory_clear(kstate.state, KECCAK_STATE_SIZE * sizeof(uint64_t));
 
 	/* initialize an instance of cSHAKE */
-	qsc_cshake_initialize(&kstate, QSC_KECCAK_512_RATE, keyparams->key, keyparams->keylen, rhx_hba512_name, HBA_NAME_LENGTH, keyparams->info, keyparams->infolen);
+	cshake_initialize(&kstate, KECCAK_512_RATE, keyparams->key, keyparams->keylen, rhx_hba512_name, HBA_NAME_LENGTH, keyparams->info, keyparams->infolen);
 	/* use two permutation calls to seperate the cipher/mac key outputs to match the CEX implementation */
-	qsc_cshake_squeezeblocks(&kstate, QSC_KECCAK_512_RATE, sbuf, 1);
-	qsc_memutils_copy(cprk, sbuf, keyparams->keylen);
+	cshake_squeezeblocks(&kstate, KECCAK_512_RATE, sbuf, 1);
+	utils_memory_copy(cprk, sbuf, keyparams->keylen);
 
-	qsc_cshake_squeezeblocks(&kstate, QSC_KECCAK_512_RATE, sbuf, 1);
-	qsc_memutils_copy(mack, sbuf, HBA512_MKEY_LENGTH);
+	cshake_squeezeblocks(&kstate, KECCAK_512_RATE, sbuf, 1);
+	utils_memory_copy(mack, sbuf, HBA512_MKEY_LENGTH);
 
 	/* clear the shake buffer */
-	qsc_intutils_clear64(kstate.state, QSC_KECCAK_STATE_SIZE);
+	utils_memory_clear(kstate.state, KECCAK_STATE_SIZE * sizeof(uint64_t));
 
 #else
 
-	uint8_t kbuf[QSC_RHX512_KEY_SIZE + HBA512_MKEY_LENGTH] = { 0 };
-	uint8_t genk[QSC_HMAC_512_MAC_SIZE] = { 0 };
+	uint8_t kbuf[RHX_RHX512_KEY_SIZE + HBA512_MKEY_LENGTH] = { 0 };
+	uint8_t genk[HMAC_512_MAC_SIZE] = { 0 };
 
 	/* extract the HKDF key from the user-key and salt */
-	qsc_hkdf512_extract(genk, sizeof(genk), keyparams->key, keyparams->keylen, rhx_hba512_name, HBA_NAME_LENGTH);
+	hkdf512_extract(genk, sizeof(genk), keyparams->key, keyparams->keylen, rhx_hba512_name, HBA_NAME_LENGTH);
 
 	/* key HKDF Expand and generate the key buffer */
-	qsc_hkdf512_expand(kbuf, sizeof(kbuf), genk, sizeof(genk), keyparams->info, keyparams->infolen);
+	hkdf512_expand(kbuf, sizeof(kbuf), genk, sizeof(genk), keyparams->info, keyparams->infolen);
 
 	/* copy the cipher and mac keys from the buffer */
-	qsc_memutils_copy(cprk, kbuf, QSC_RHX512_KEY_SIZE);
-	qsc_memutils_copy(mack, (uint8_t*)(kbuf + QSC_RHX512_KEY_SIZE), HBA512_MKEY_LENGTH);
+	utils_memory_copy(cprk, kbuf, RHX_RHX512_KEY_SIZE);
+	utils_memory_copy(mack, (uint8_t*)(kbuf + RHX_RHX512_KEY_SIZE), HBA512_MKEY_LENGTH);
 
 	/* clear the buffer */
-	qsc_memutils_clear(kbuf, sizeof(kbuf));
+	utils_memory_clear(kbuf, sizeof(kbuf));
 #endif
 
 }
 
-void qsc_rhx_hba512_dispose(qsc_rhx_hba512_state* state)
+void rhx_hba512_dispose(rhx_hba512_state* state)
 {
 	if (state != NULL)
 	{
 		if (&state->kstate != NULL)
 		{
-#if defined(QSC_RHX_SHAKE_EXTENSION)
-			qsc_keccak_dispose(&state->kstate);
+#if defined(RHX_SHAKE_EXTENSION)
+			keccak_dispose(&state->kstate);
 #else
-			qsc_hmac512_dispose(&state->kstate);
+			hmac512_dispose(&state->kstate);
 #endif
 		}
 
 		if (&state->cstate != NULL)
 		{
-			qsc_rhx_dispose(&state->cstate);
+			rhx_dispose(&state->cstate);
 		}
 
 		if (state->cust != NULL)
 		{
-			qsc_memutils_clear(state->cust, sizeof(state->cust));
+			utils_memory_clear(state->cust, sizeof(state->cust));
 		}
 
 		if (state->mkey != NULL)
 		{
-			qsc_memutils_clear(state->mkey, sizeof(state->mkey));
+			utils_memory_clear(state->mkey, sizeof(state->mkey));
 		}
 
 		state->counter = 0;
@@ -2073,34 +2037,34 @@ void qsc_rhx_hba512_dispose(qsc_rhx_hba512_state* state)
 	}
 }
 
-void qsc_rhx_hba512_initialize(qsc_rhx_hba512_state* state, const qsc_rhx_keyparams* keyparams, bool encrypt)
+void rhx_hba512_initialize(rhx_hba512_state* state, const rhx_keyparams* keyparams, bool encrypt)
 {
-	uint8_t cprk[QSC_RHX512_KEY_SIZE] = { 0 };
+	uint8_t cprk[RHX_RHX512_KEY_SIZE] = { 0 };
 
-	state->custlen = qsc_intutils_min(keyparams->infolen, sizeof(state->cust));
+	state->custlen = utils_integer_min(keyparams->infolen, sizeof(state->cust));
 
 	if (state->custlen != 0)
 	{
-		qsc_memutils_clear(state->cust, sizeof(state->cust));
-		qsc_memutils_copy(state->cust, keyparams->info, state->custlen);
+		utils_memory_clear(state->cust, sizeof(state->cust));
+		utils_memory_copy(state->cust, keyparams->info, state->custlen);
 	}
 
-	qsc_intutils_clear8(state->mkey, sizeof(state->mkey));
+	utils_memory_clear(state->mkey, sizeof(state->mkey));
 
 	/* generate the cipher and mac keys */
 	rhx_hba512_genkeys(keyparams, cprk, state->mkey);
 
 	/* initialize the mac state */
-#if defined(QSC_RHX_SHAKE_EXTENSION)
-	qsc_kmac_initialize(&state->kstate, QSC_KECCAK_512_RATE, state->mkey, HBA512_MKEY_LENGTH, NULL, 0);
+#if defined(RHX_SHAKE_EXTENSION)
+	kmac_initialize(&state->kstate, KECCAK_512_RATE, state->mkey, HBA512_MKEY_LENGTH, NULL, 0);
 #else
-	qsc_hmac512_initialize(&state->kstate, state->mkey, HBA512_MKEY_LENGTH);
+	hmac512_initialize(&state->kstate, state->mkey, HBA512_MKEY_LENGTH);
 #endif
 
 	/* initialize the key parameters struct, info is optional */
-	qsc_rhx_keyparams kp = { cprk, QSC_RHX512_KEY_SIZE, keyparams->nonce, keyparams->info, keyparams->infolen };
+	rhx_keyparams kp = { cprk, RHX_RHX512_KEY_SIZE, keyparams->nonce, keyparams->info, keyparams->infolen };
 	/* initialize the cipher state */
-	qsc_rhx_initialize(&state->cstate, &kp, true, RHX512);
+	rhx_initialize(&state->cstate, &kp, true, RHX512);
 
 	/* populate the hba state structure with mac-key and counter */
 	/* the state counter always initializes at 1 */
@@ -2108,7 +2072,7 @@ void qsc_rhx_hba512_initialize(qsc_rhx_hba512_state* state, const qsc_rhx_keypar
 	state->encrypt = encrypt;
 }
 
-void qsc_rhx_hba512_set_associated(qsc_rhx_hba512_state* state, const uint8_t* data, size_t datalen)
+void rhx_hba512_set_associated(rhx_hba512_state* state, const uint8_t* data, size_t datalen)
 {
 	assert(state != NULL);
 	assert(data != NULL);
@@ -2121,12 +2085,12 @@ void qsc_rhx_hba512_set_associated(qsc_rhx_hba512_state* state, const uint8_t* d
 		/* add the additional data to the mac */
 		rhx_hba512_update(state, data, datalen);
 		/* 1.1a encode with the ad size */
-		qsc_intutils_le32to8(actr, (uint32_t)datalen);
+		utils_integer_le32to8(actr, (uint32_t)datalen);
 		rhx_hba512_update(state, actr, sizeof(actr));
 	}
 }
 
-bool qsc_rhx_hba512_transform(qsc_rhx_hba512_state* state, uint8_t* output, const uint8_t* input, size_t inputlen)
+bool rhx_hba512_transform(rhx_hba512_state* state, uint8_t* output, const uint8_t* input, size_t inputlen)
 {
 	bool res;
 
@@ -2138,9 +2102,9 @@ bool qsc_rhx_hba512_transform(qsc_rhx_hba512_state* state, uint8_t* output, cons
 	if (state->encrypt)
 	{
 		/* update the mac with the nonce */
-		rhx_hba512_update(state, state->cstate.nonce, QSC_RHX_BLOCK_SIZE);
+		rhx_hba512_update(state, state->cstate.nonce, RHX_BLOCK_SIZE);
 		/* use rhx counter-mode to encrypt the array */
-		qsc_rhx_ctrle_transform(&state->cstate, output, input, inputlen);
+		rhx_ctrle_transform(&state->cstate, output, input, inputlen);
 		/* update the mac with the cipher-text */
 		rhx_hba512_update(state, output, inputlen);
 		/* mac the cipher-text appending the code to the end of the array */
@@ -2149,20 +2113,20 @@ bool qsc_rhx_hba512_transform(qsc_rhx_hba512_state* state, uint8_t* output, cons
 	}
 	else
 	{
-		uint8_t code[QSC_HBA512_MAC_LENGTH] = { 0 };
+		uint8_t code[RHX_HBA512_MAC_LENGTH] = { 0 };
 
 		/* update the mac with the nonce */
-		rhx_hba512_update(state, state->cstate.nonce, QSC_RHX_BLOCK_SIZE);
+		rhx_hba512_update(state, state->cstate.nonce, RHX_BLOCK_SIZE);
 		/* update the mac with the cipher-text */
 		rhx_hba512_update(state, (uint8_t*)input, inputlen);
 		/* mac the cipher-text to the mac */
 		rhx_hba512_finalize(state, code);
 
 		/* test the mac for equality, bypassing the transform if the mac check fails */
-		if (qsc_intutils_verify(code, (uint8_t*)(input + inputlen), QSC_HBA512_MAC_LENGTH) == 0)
+		if (utils_integer_verify(code, (uint8_t*)(input + inputlen), RHX_HBA512_MAC_LENGTH) == 0)
 		{
 			/* use rhx counter-mode to decrypt the array */
-			qsc_rhx_ctrle_transform(&state->cstate, output, input, inputlen);
+			rhx_ctrle_transform(&state->cstate, output, input, inputlen);
 			res = true;
 		}
 	}

@@ -38,39 +38,39 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
@@ -120,7 +120,7 @@
     <ClCompile>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
-      <Optimization>Disabled</Optimization>
+      <Optimization>MaxSpeed</Optimization>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ExceptionHandling>false</ExceptionHandling>
@@ -227,45 +227,28 @@
   <ItemGroup>
     <ClCompile Include="aesavs_test.c" />
     <ClCompile Include="cipher_speed.c" />
-    <ClCompile Include="consoleutils.c" />
-    <ClCompile Include="cpuidex.c" />
-    <ClCompile Include="csp.c" />
-    <ClCompile Include="fileutils.c" />
-    <ClCompile Include="intutils.c" />
-    <ClCompile Include="memutils.c" />
+    <ClCompile Include="hash.c" />
     <ClCompile Include="rhx.c" />
     <ClCompile Include="rhx_test.c" />
     <ClCompile Include="rhx_main.c" />
     <ClCompile Include="selftest.c" />
-    <ClCompile Include="sha2.c" />
     <ClCompile Include="sha2_test.c" />
-    <ClCompile Include="sha3.c" />
     <ClCompile Include="sha3_test.c" />
-    <ClCompile Include="stringutils.c" />
     <ClCompile Include="testutils.c" />
-    <ClCompile Include="timerex.c" />
+    <ClCompile Include="utils.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="aesavs_test.h" />
     <ClInclude Include="cipher_speed.h" />
     <ClInclude Include="common.h" />
-    <ClInclude Include="consoleutils.h" />
-    <ClInclude Include="cpuidex.h" />
-    <ClInclude Include="csp.h" />
-    <ClInclude Include="fileutils.h" />
-    <ClInclude Include="intrinsics.h" />
-    <ClInclude Include="intutils.h" />
-    <ClInclude Include="memutils.h" />
+    <ClInclude Include="hash.h" />
     <ClInclude Include="rhx.h" />
     <ClInclude Include="rhx_test.h" />
     <ClInclude Include="selftest.h" />
-    <ClInclude Include="sha2.h" />
     <ClInclude Include="sha2_test.h" />
-    <ClInclude Include="sha3.h" />
     <ClInclude Include="sha3_test.h" />
-    <ClInclude Include="stringutils.h" />
     <ClInclude Include="testutils.h" />
-    <ClInclude Include="timerex.h" />
+    <ClInclude Include="utils.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

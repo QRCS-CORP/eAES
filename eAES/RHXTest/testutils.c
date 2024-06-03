@@ -1,45 +1,45 @@
 #include "testutils.h"
-#include "csp.h"
-#include "memutils.h"
 #include <stdio.h>
 
 char qsctest_get_char()
 {
 	char line[8] = { 0 };
-	const char* res;
-	char ret;
+	char res;
 
-	res = fgets(line, sizeof(line), stdin);
+	res = '0';
 
-	if (res != NULL)
+	if (fgets(line, sizeof(line), stdin) != NULL)
 	{
-		ret = line[0];
-	}
-	else
-	{
-		ret = 0;
+		res = line[0];
 	}
 
-	return ret;
+	return res;
 }
 
-uint8_t qsctest_get_wait()
+#if defined(SYSTEM_SOCKETS_WINDOWS)
+char qsctest_get_wait()
 {
-	char ret;
+	char c;
 
-#if defined(QSC_SYSTEM_OS_WINDOWS)
-	ret = (char)getwchar();
-#else
-	ret = getchar();
-#endif
+	c = (wint_t)getwchar();
 
-	return (uint8_t)ret;
+	return c;
 }
+#else
+char qsctest_get_wait()
+{
+	char c;
+
+	c = getchar();
+
+	return c;
+}
+#endif
 
 void qsctest_hex_to_bin(const char* hexstr, uint8_t* output, size_t length)
 {
-	uint8_t  idx0;
-	uint8_t  idx1;
+	uint8_t idx0;
+	uint8_t idx1;
 
 	const uint8_t hashmap[] =
 	{
@@ -49,165 +49,13 @@ void qsctest_hex_to_bin(const char* hexstr, uint8_t* output, size_t length)
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 	};
 
-	qsc_memutils_clear(output, length);
+	memset(output, 0, length);
 
-	for (size_t  pos = 0; pos < (length * 2); pos += 2)
+	for (size_t pos = 0; pos < (length * 2); pos += 2)
 	{
 		idx0 = ((uint8_t)hexstr[pos + 0] & 0x1FU) ^ 0x10U;
 		idx1 = ((uint8_t)hexstr[pos + 1] & 0x1FU) ^ 0x10U;
 		output[pos / 2] = (uint8_t)(hashmap[idx0] << 4) | hashmap[idx1];
-	}
-}
-
-void qsctest_print_hex_quot(const uint8_t* input, size_t inputlen, size_t linelen)
-{
-	size_t i;
-
-	while (inputlen >= linelen)
-	{
-		qsctest_print_safe("\"");
-
-		for (i = 0; i < linelen; ++i)
-		{
-#if defined(QSC_SYSTEM_OS_WINDOWS)
-			printf_s("%02X", input[i]);
-#else
-			printf("%02X", input[i]);
-#endif
-		}
-
-		qsctest_print_safe("\"");
-		input += linelen;
-		inputlen -= linelen;
-		qsctest_print_safe("\n");
-	}
-
-	if (inputlen != 0)
-	{
-		qsctest_print_safe("\"");
-
-		for (i = 0; i < inputlen; ++i)
-		{
-#if defined(QSC_SYSTEM_OS_WINDOWS)
-			printf_s("%02X", input[i]);
-#else
-			printf("%02X", input[i]);
-#endif
-		}
-
-		qsctest_print_safe("\"");
-	}
-}
-
-void qsctest_print_hex_uint16(const uint16_t* input, size_t inputlen, size_t linelen)
-{
-	size_t i;
-
-	while (inputlen >= linelen)
-	{
-		for (i = 0; i < linelen; ++i)
-		{
-#if defined(QSC_SYSTEM_OS_WINDOWS)
-			printf_s("0x%04X", input[i]);
-			printf_s("%s", "U, ");
-#else
-			printf("0x%04X", input[i]);
-			printf("%s", "U, ");
-#endif
-		}
-
-		input += linelen;
-		inputlen -= linelen;
-		qsctest_print_safe("\n");
-	}
-
-	if (inputlen != 0)
-	{
-		for (i = 0; i < inputlen; ++i)
-		{
-#if defined(QSC_SYSTEM_OS_WINDOWS)
-			printf_s("0x%04X", input[i]);
-			printf_s("%s", "U, ");
-#else
-			printf("0x%04X", input[i]);
-			printf("%s", "U, ");
-#endif
-		}
-
-	}
-}
-
-void qsctest_print_hex_uint32(const uint32_t* input, size_t inputlen, size_t linelen)
-{
-	size_t i;
-
-	while (inputlen >= linelen)
-	{
-		for (i = 0; i < linelen; ++i)
-		{
-#if defined(QSC_SYSTEM_OS_WINDOWS)
-			printf_s("0x%08lX", input[i]);
-			printf_s("%s", "UL, ");
-#else
-			printf("0x%08lX", (long unsigned int)input[i]);
-			printf("%s", "UL, ");
-#endif
-		}
-
-		input += linelen;
-		inputlen -= linelen;
-		qsctest_print_safe("\n");
-	}
-
-	if (inputlen != 0)
-	{
-		for (i = 0; i < inputlen; ++i)
-		{
-#if defined(QSC_SYSTEM_OS_WINDOWS)
-			printf_s("0x%08lX", input[i]);
-			printf_s("%s", "UL, ");
-#else
-			printf("0x%08lX", (long unsigned int)input[i]);
-			printf("%s", "UL, ");
-#endif
-		}
-	}
-}
-
-void qsctest_print_hex_uint64(const uint64_t* input, size_t inputlen, size_t linelen)
-{
-	size_t i;
-
-	while (inputlen >= linelen)
-	{
-		for (i = 0; i < linelen; ++i)
-		{
-#if defined(QSC_SYSTEM_OS_WINDOWS)
-			printf_s("0x%016llX", input[i]);
-			printf_s("%s", "ULL, ");
-#else
-			printf("0x%016llX", (long long unsigned int)input[i]);
-			printf("%s", "ULL, ");
-#endif
-		}
-
-		input += linelen;
-		inputlen -= linelen;
-		qsctest_print_safe("\n");
-	}
-
-	if (inputlen != 0)
-	{
-		for (i = 0; i < inputlen; ++i)
-		{
-#if defined(QSC_SYSTEM_OS_WINDOWS)
-			printf_s("0x%016llX", input[i]);
-			printf_s("%s", "ULL, ");
-#else
-			printf("0x%016llX", (long long unsigned int)input[i]);
-			printf("%s", "ULL, ");
-#endif
-		}
 	}
 }
 
@@ -219,7 +67,7 @@ void qsctest_print_hex(const uint8_t* input, size_t inputlen, size_t linelen)
 	{
 		for (i = 0; i < linelen; ++i)
 		{
-#if defined(QSC_SYSTEM_OS_WINDOWS)
+#if defined(_MSC_VER)
 			printf_s("%02X", input[i]);
 #else
 			printf("%02X", input[i]);
@@ -235,7 +83,7 @@ void qsctest_print_hex(const uint8_t* input, size_t inputlen, size_t linelen)
 	{
 		for (i = 0; i < inputlen; ++i)
 		{
-#if defined(QSC_SYSTEM_OS_WINDOWS)
+#if defined(_MSC_VER)
 			printf_s("%02X", input[i]);
 #else
 			printf("%02X", input[i]);
@@ -248,8 +96,8 @@ void qsctest_print_safe(const char* input)
 {
 	if (input != NULL)
 	{
-#if defined(QSC_SYSTEM_OS_WINDOWS)
-		printf_s("%s", input);
+#if defined(_MSC_VER)
+		printf_s(input);
 #else
 		printf("%s", input);
 #endif
@@ -264,57 +112,20 @@ void qsctest_print_line(const char* input)
 
 void qsctest_print_ulong(uint64_t digit)
 {
-#if defined(QSC_SYSTEM_OS_WINDOWS)
+#if defined(_MSC_VER)
 	printf_s("%llu", digit);
 #else
-	printf("%llu", (long long unsigned int)digit);
+	printf("%llu", (unsigned long long)digit);
 #endif
 }
 
 void qsctest_print_double(double digit)
 {
-#if defined(QSC_SYSTEM_OS_WINDOWS)
+#if defined(_MSC_VER)
 	printf_s("%.*lf", 3, digit);
 #else
 	printf("%.*lf", 3, digit);
 #endif
-}
-
-bool qsctest_random_readable_string(char* output, size_t length)
-{
-	const size_t RBUF_LEN = 1024;
-	uint8_t buff[1024] = { 0 };
-	size_t ctr;
-	bool ret;
-
-	ctr = 0;
-	ret = false;
-
-	if (output != NULL && length <= 1024000)
-	{
-		while (ctr < length)
-		{
-			qsc_csp_generate(buff, RBUF_LEN);
-
-			for (size_t i = 0; i < RBUF_LEN; ++i)
-			{
-				if (buff[i] > 31 && buff[i] < 123 && (buff[i] != 39 && buff[i] != 40 && buff[i] != 41))
-				{
-					output[ctr] = (char)buff[i];
-					++ctr;
-
-					if (ctr >= length)
-					{
-						break;
-					}
-				}
-			}
-		}
-
-		ret = true;
-	}
-
-	return ret;
 }
 
 bool qsctest_test_confirm(const char* message)
