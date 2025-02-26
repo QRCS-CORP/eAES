@@ -40,13 +40,11 @@ The HBA implementation mirrors this change, using HMAC in legacy mode, or KMAC i
 The AES128 and AES256 implementations along with the CBC, CTR, and CBC modes are tested using vectors from NIST SP800-38a. 
 See the documentation and the rhx_kat.h tests for usage examples.
 
-SP800-38a: <a href="http://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38a.pdf">Block Cipher Modes of Operations</a>
+[NIST SP800-38a](http://nvlpubs.nist.gov/nistpubs/Legacy/SP/nistspecialpublication800-38a.pdf)
 
-Towards post-quantum symmetric cryptography: <a href="https://eprint.iacr.org/2019/553>eAES</a>
+[Towards Post-Quantum Symmetric Cryptography](https://eprint.iacr.org/2019/553)
 
-Towards Post-Quantum Secure Symmetric Cryptography: <a href="https://eprint.iacr.org/2019/1208>A Mathematical Perspective</a>
+[Towards Post-Quantum Symmetric Cryptography: A Mathematical Perspective](https://eprint.iacr.org/2019/1208)
  
-## Disclaimer
-This project contains strong cryptography, before downloading the source files, 
-it is your responsibility to check if the extended symmetric cipher key lengths (512 bit and higher), and other cryptographic algorithms contained in this project are legal in your country. 
-If you use this code, please do so responsibly and in accordance to law in your region.
+## License
+eAES is licensed under the GPLv3 software license.
